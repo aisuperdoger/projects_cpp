@@ -79,7 +79,7 @@ public:
 
 private:
     locker m_requestId_lock;
-    vector<vector<int>> servers;
+    vector<vector<int>> servers;    // 存储着每个leaderid对应的端口号
     int leaderId;                  //暂存的leaderID，不用每次都轮询一遍
     int clientId;                  //独一无二的客户端ID
     int requestId;                 //只会递增的该客户端的请求ID，保证按序执行
@@ -87,10 +87,10 @@ private:
 
 Clerk::Clerk(vector<vector<int>>& servers){
     this->servers = servers;
-    this->clientId = rand() % 10000 + 1;
+    this->clientId = rand() % 10000 + 1; // 每个客户端启动后随机分配独一无二的ID，其每个请求由单调递增的requestID来标识
     printf("clientId is %d\n", clientId);
     this->requestId = 0;
-    this->leaderId = rand() % servers.size();
+    this->leaderId = rand() % servers.size();    //随机选取一个kvServer作为leader
 }
 
 string Clerk::get(string key){
@@ -164,13 +164,14 @@ void Clerk::putAppend(string key, string value, string op){
     int cur_leader = getCurLeader();
 
     port_lock.lock();
-    int curPort = (cur_portId++) % EVERY_SERVER_PORT;
+    int curPort = (cur_portId++) % EVERY_SERVER_PORT; //使用的RPC框架是阻塞式，任务排队完成，所以server端使用多个port监听同样请求
     port_lock.unlock();
 
-    while(1){
+    while(1){ // whileLoop中不断重试（发给另外的server）直到设置成功
         buttonrpc client;
         client.as_client("127.0.0.1", servers[cur_leader][curPort]);
-        PutAppendReply reply = client.call<PutAppendReply>("putAppend", args).val();    //取得RPCreply，对于put、append只需知道是否成功，直到成功才停止
+        PutAppendReply reply = client.call<PutAppendReply>("putAppend", args).val();    // 取得RPCreply，对于put、append只需知道是否成功，直到成功才停止
+                                                                                       // buttonrpc client需要定义在while内，不然无法退出循环(不知道为什么，gdb单步调试试出来的)
         if(!reply.isWrongLeader){
             return;
         }
@@ -184,7 +185,7 @@ vector<vector<int>> getServerPort(int num){
     vector<vector<int>> kvServerPort(num);
     for(int i = 0; i < num; i++){
         for(int j = 0; j < 3; j++){
-            kvServerPort[i].push_back(COMMOM_PORT + i + (j + 2) * num);
+            kvServerPort[i].push_back(COMMOM_PORT + i + (j + 2) * num); // 1234+0+(0+2)*5   1234+4+(0+2)*5
         }
     }
     return kvServerPort;

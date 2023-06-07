@@ -25,7 +25,7 @@ class InstallSnapShotArgs{
 public:
     int term;
     int leaderId;
-    int lastIncludedIndex;
+    int lastIncludedIndex; // 
     int lastIncludedTerm;
     string snapShot;
 
@@ -71,14 +71,16 @@ public:
 
 class ApplyMsg {
 public:
+    Operation getOperation();
+
+public:
     bool commandValid;
 	string command;
     int commandIndex;
     int commandTerm;
-    Operation getOperation();
 
     int lastIncludedIndex;
-    int lastIncludedTerm;
+    int lastIncludedTerm; // 快照替换所有条目，包括该索引
     string snapShot;
 };
 
@@ -123,11 +125,12 @@ public:
 class Persister{
 public:
     vector<LogEntry> logs;
-    string snapShot;
+    string snapShot; //在LAB3中进行快照时需要持久化的状态 
+                     // 从getSnapShot()中可以看到snapShot的格式
     int cur_term;
     int votedFor;
-    int lastIncludedIndex;
-    int lastIncludedTerm;
+    int lastIncludedIndex;  //后续在LAB3中进行快照时需要持久化的状态
+    int lastIncludedTerm;   //后续在LAB3中进行快照时需要持久化的状态
 };
 
 class AppendEntriesArgs{
@@ -209,7 +212,7 @@ public:
     void serialize();
     bool deserialize();
     void saveRaftState();
-    void readRaftState();
+    void readRaftState(); // saveState()及readState()两个函数，分别进行状态的保存(持久化)以及宕机恢复时的状态重建
     bool isKilled();  //->check is killed?
     void kill();  
     void activate();
@@ -259,7 +262,7 @@ private:
     //用作与kvRaft交互
     sem m_recvSem;                      //结合kvServer层的有名管道fifo模拟go的select及channel
     sem m_sendSem;                      //结合kvServer层的有名管道fifo模拟go的select及channel
-    vector<ApplyMsg> m_msgs;            //在applyLogLoop中存msg的容易，每次存一条，处理完再存一条
+    vector<ApplyMsg> m_msgs;            //在applyLogLoop中存msg的容器，每次存一条，处理完再存一条
 
     // bool installSnapShotFlag;
     // bool applyLogFlag;
@@ -313,7 +316,7 @@ void Raft::Make(vector<PeersInfo> peers, int id){
     pthread_detach(listen_tid3);
 }
 
-void* Raft::applyLogLoop(void* arg){
+void* Raft::applyLogLoop(void* arg){ // 将已经提交的日志上传给kvServer层
     Raft* raft = (Raft*)arg;
     while(1){
         while(!raft->dead){
@@ -331,9 +334,9 @@ void* Raft::applyLogLoop(void* arg){
             // printf("%d's apply is called, apply is %d, commit is %d\n", raft->m_peerId, raft->m_lastApplied, raft->m_commitIndex);
             vector<ApplyMsg> msgs;
             raft->m_lock.lock();
-            while(raft->m_lastApplied < raft->m_commitIndex){
+            while(raft->m_lastApplied < raft->m_commitIndex){ // 存在已经提交的日志没有被apply，apply应该指的是将日志发送给应用层
                 raft->m_lastApplied++;
-                int appliedIdx = raft->idxToCompressLogPos(raft->m_lastApplied);
+                int appliedIdx = raft->idxToCompressLogPos(raft->m_lastApplied); // m_lastApplied - m_lastIncludedIndex - 1;
                 ApplyMsg msg;
                 msg.command = raft->m_logs[appliedIdx].m_command;
                 msg.commandValid = true;
@@ -342,17 +345,17 @@ void* Raft::applyLogLoop(void* arg){
                 msgs.push_back(msg);
             }
             raft->m_lock.unlock();
-            for(int i = 0; i < msgs.size(); i++){
+            for(int i = 0; i < msgs.size(); i++){ // 通过信号量通知kvServer将日志保存到数据库中
                 // printf("before %d's apply is called, apply is %d, commit is %d\n", 
                 //     raft->m_peerId, raft->m_lastApplied, raft->m_commitIndex);
-                raft->waitRecvSem();
+                raft->waitRecvSem();  // m_recvSem的初始值为1，所以第一次不会阻塞  // 等待kvServer层保存完成上一条日志，然后kvServer会执行postRecvSem，从而解除waitRecvSem的阻塞
                 // printf("after %d's apply is called, apply is %d, commit is %d\n", 
                 //     raft->m_peerId, raft->m_lastApplied, raft->m_commitIndex);
                 raft->m_msgs.push_back(msgs[i]);
-                raft->postSendSem();
+                raft->postSendSem(); // 通知kvServer层有日志需要保存
             }
         }
-        usleep(10000);
+        usleep(10000); // 行宕机一段时间后上线能再次进入内层apply日志
     }
 }
 
@@ -579,7 +582,7 @@ void* Raft::processEntriesLoop(void* arg){
         int i = 0;
         for(auto& server : raft->m_peers){
             if(server.m_peerId == raft->m_peerId) continue;
-            if(raft->m_nextIndex[server.m_peerId] <= raft->m_lastIncludedIndex){        //进入install分支的条件，日志落后于leader的快照
+            if(raft->m_nextIndex[server.m_peerId] <= raft->m_lastIncludedIndex){        //进入install分支的条件，日志落后于leader的快照 // 由于m_lastIncludedIndex之前的日志都生成了快照，所以就需要使用快照来同步日志
                 printf("%d send install rpc to %d, whose nextIdx is %d, but leader's lastincludeIdx is %d\n", 
                     raft->m_peerId, server.m_peerId, raft->m_nextIndex[server.m_peerId], raft->m_lastIncludedIndex);
                 server.isInstallFlag = true;
@@ -607,11 +610,11 @@ void* Raft::sendInstallSnapShot(void* arg){
     //     printf("in install %d's server.isInstallFlag is %d\n", i, raft->m_peers[i].isInstallFlag ? 1 : 0);
     // }
     for(int i = 0; i < raft->m_peers.size(); i++){
-        if(raft->m_peers[i].m_peerId == raft->m_peerId){
+        if(raft->m_peers[i].m_peerId == raft->m_peerId){ // 代表raft->m_peers[i]为leader
             // printf("%d is leader, continue\n", i);
             continue;
         }
-        if(!raft->m_peers[i].isInstallFlag){
+        if(!raft->m_peers[i].isInstallFlag){ // 已经安装过快照了
             // printf("%d is append, continue\n", i);
             continue;
         }
@@ -620,10 +623,10 @@ void* Raft::sendInstallSnapShot(void* arg){
             continue;
         }
         clientPeerId = i;
-        raft->isExistIndex.insert(i);
+        raft->isExistIndex.insert(i); // 代表已经发送过install rpc了？什么意思？
         // printf("%d in install insert index : %d, size is %d\n", raft->m_peerId, i, raft->isExistIndex.size());
         break;
-    }
+    } // 取出某个符合条件的peer
 
     client.as_client("127.0.0.1", raft->m_peers[clientPeerId].m_port.second);
     
@@ -711,7 +714,7 @@ InstallSnapSHotReply Raft::installSnapShot(InstallSnapShotArgs args){
                 m_logs.clear();
             }else{
                 vector<LogEntry> tmpLog(m_logs.begin() + idxToCompressLogPos(args.lastIncludedIndex) + 1, m_logs.end());
-                m_logs = tmpLog;
+                m_logs = tmpLog; // 清除m_logs.begin() + idxToCompressLogPos(args.lastIncludedIndex) + 1之前的所有日志，只保留后面的日志
             }
         }else{
             m_logs.clear();
@@ -863,7 +866,7 @@ void* Raft::sendAppendEntries(void* arg){
             if(leader_conflict_index != -1){
                 raft->m_nextIndex[clientPeerId] = leader_conflict_index + 1;
             }else{
-                raft->m_nextIndex[clientPeerId] = reply.m_conflict_term; //这里加不加1都可，无非是多一位还是少一位，此处指follower对应index为空
+                raft->m_nextIndex[clientPeerId] = reply.m_conflict_index; //这里加不加1都可，无非是多一位还是少一位，此处指follower对应index为空
             }
         }else{
             if(reply.m_conflict_term == -100){
@@ -1010,7 +1013,7 @@ StartRet Raft::start(Operation op){
     log.m_term = m_curTerm;
     push_backLog(log);
 
-    ret.m_cmdIndex = lastIndex();
+    ret.m_cmdIndex = lastIndex(); // m_lastIncludedIndex + m_logs.size();
     ret.m_curTerm = m_curTerm;
     ret.isLeader = true;
     // printf("index : %d, term : %d, isleader : %d\n", ret.m_cmdIndex, ret.m_curTerm, ret.isLeader == false ? 0 : 1);
@@ -1027,11 +1030,11 @@ void Raft::printLogs(){
 }
 
 void Raft::serialize(){
-    string str;
+    string str; // 例如 1;0;128;1;append bcd 232 9198 20,1.
     str += to_string(this->persister.cur_term) + ";" + to_string(this->persister.votedFor) + ";";
     str += to_string(this->persister.lastIncludedIndex) + ";" + to_string(this->persister.lastIncludedTerm) + ";";
     for(const auto& log : this->persister.logs){
-        str += log.m_command + "," + to_string(log.m_term) + ".";
+        str += log.m_command + "," + to_string(log.m_term) + "."; //  m_command包括了：op + " " + key + " " + value + " " + to_string(clientId) + " " + to_string(requestId)
     }
     string filename = "persister-" + to_string(m_peerId);
     int fd = open(filename.c_str(), O_WRONLY | O_CREAT, 0664);
@@ -1039,7 +1042,8 @@ void Raft::serialize(){
         perror("open");
         exit(-1);
     }
-    int len = write(fd, str.c_str(), str.size());
+    int len = write(fd, str.c_str(), str.size()); // write()接受const void *buf，此处string需要转化为const char *，可以通过c_str()
+                                                  // 写入时长度需要设置为string.size() + 1，为字符串结束符，不然读取时有时候最后一位会有乱码，虽然也不影响实际效果(在协议设置好的情况下)
     close(fd);
 }
 
@@ -1154,9 +1158,9 @@ bool Raft::ExceedLogSize(int size){
     bool ret = false;
 
     m_lock.lock();
-    int sum = 8;
-    for(int i = 0; i < persister.logs.size(); i++){
-        sum += persister.logs[i].m_command.size() + 3;
+    int sum = 8;  // 一个persister的例子：“1;0;128;1;append bcd 232 9198 20,1.”，“1;0;128;1;”就是指这里的8个字节 
+    for(int i = 0; i < persister.logs.size(); i++){ 
+        sum += persister.logs[i].m_command.size() + 3; // m_command.size()指的是“append bcd 232 9198 20”，3指的是“,1.”
     }
     ret = (sum >= size ? true : false);
     if(ret) printf("[%d] in Exceed the log size is %d\n", m_peerId, sum);
@@ -1183,7 +1187,7 @@ void Raft::recvSnapShot(string snapShot, int lastIncludedIndex){
     for(int i = compressLen; i < m_logs.size(); i++){
         tmpLogs.push_back(m_logs[i]);
     }
-    m_logs = tmpLogs;
+    m_logs = tmpLogs; // 相当于删除了前面的compressLen-1个元素，保留了后面的元素
     printf("[%d] after log.size is %d\n", m_peerId, m_logs.size());
     //更新了logs及lastTerm和lastIndex，需要持久化
     persister.snapShot = snapShot;
@@ -1259,13 +1263,13 @@ void Raft::installSnapShotTokvServer(){
     ApplyMsg msg;
     msg.commandValid = false;
     msg.snapShot = persister.snapShot;
-    msg.lastIncludedIndex = this->m_lastIncludedIndex;
+    msg.lastIncludedIndex = this->m_lastIncludedIndex; 
     msg.lastIncludedTerm = this->m_lastIncludedTerm;
 
-    m_lastApplied = m_lastIncludedIndex;
+    m_lastApplied = this->m_lastIncludedIndex;
     m_lock.unlock();
 
-    waitRecvSem();
+    waitRecvSem(); //  // 通过信号量通知kvServer将快照中的日志保存到数据库中
     m_msgs.push_back(msg);
     postSendSem();
 

@@ -77,7 +77,7 @@ public:
         sem_destroy(&m_sem);
     }
     bool wait(){
-        return sem_wait(&m_sem) == 0;
+        return sem_wait(&m_sem) == 0; // 阻塞当前线程直到信号量sem的值大于0，解除阻塞后将sem的值减一。函数执行成功返回0
     }
     bool timewait(struct timespec timeout){
         int ret = 0;    
@@ -85,7 +85,7 @@ public:
         return ret == 0;
     }
     bool post(){
-        return sem_post(&m_sem) == 0;
+        return sem_post(&m_sem) == 0; // 信号量加一。当有线程阻塞在这个信号量上时，调用这个函数会使其中的一个线程不在阻塞.函数执行成功返回0，
     }
 private:
     sem_t m_sem;

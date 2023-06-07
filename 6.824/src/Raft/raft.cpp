@@ -49,7 +49,7 @@ class ApplyMsg {
 // 一个存放当前raft的ID及自己两个RPC端口号的class(为了减轻负担，一个选举，一个日志同步，分开来)
 class PeersInfo {
    public:
-    pair<int, int> m_port;  // 这些端口号改为ip，那么就可以实现在不同的机器上的分布式系统了
+    pair<int, int> m_port;  // 这些端口号改为ip，那么就可以实现在不同的机器上的分布式系统了  两个端口：1.vote的RPC端口 2.append的RPC端口
     int m_peerId;
 };
 
@@ -96,7 +96,7 @@ class AppendEntriesReply {
    public:
     int m_term;
     bool m_success;
-    int m_conflict_term;   // 用于冲突时日志快速匹配
+    int m_conflict_term;   // 用于冲突时日志快速匹配 m_conflict_相关的用于快速回滚，LAB2C会用到
     int m_conflict_index;  // 用于冲突时日志快速匹配
 };
 
@@ -118,8 +118,8 @@ class Raft {  // 每个Raft对象都是一个节点
    public:
     static void* listenForVote(void* arg);       // 用于监听voteRPC的server线程
     static void* listenForAppend(void* arg);     // 用于监听appendRPC的server线程
-    static void* processEntriesLoop(void* arg);  // 持续处理日志同步的守护线程
-    static void* electionLoop(void* arg);        // 持续处理选举的守护线程
+    static void* processEntriesLoop(void* arg);  // 持续处理日志同步的守护线程 死循环进行心跳
+    static void* electionLoop(void* arg);        // 持续处理选举的守护线程 死循环进行超时选举
     static void* callRequestVote(void* arg);     // 发voteRPC的线程
     static void* sendAppendEntries(void* arg);   // 发appendRPC的线程
     static void* applyLogLoop(void* arg);        // 持续向上层应用日志的守护线程
@@ -153,7 +153,7 @@ class Raft {  // 每个Raft对象都是一个节点
     // 这样每个raft都包含了其他raft示例的RPC端口，并取得了自己唯一的peerID，在自己成为leader或candidate时可以
     // 通过创建多个线程向peers中除了自己以外的raft对象发起RPC请求(goroutine中很方便，C++线程实现需要额外维护一
     // 个cur_peerId表示哪些peer是已经发过的)
-    vector<PeersInfo> m_peers;
+    vector<PeersInfo> m_peers;  
     Persister persister;
     int m_peerId;  // 当前节点的id
     int dead;
@@ -161,7 +161,7 @@ class Raft {  // 每个Raft对象都是一个节点
     // 需要持久化的data
     int m_curTerm;            // 当前任期
     int m_votedFor;           // 投票给谁了
-    vector<LogEntry> m_logs;  // 存储着所有日志
+    vector<LogEntry> m_logs;  // 存储着所有日志 first index is 1
 
     // 用于leader维护
     vector<int> m_nextIndex;   //  // 对于每台服务器，下一个要发送到该服务器的日志项的索引
@@ -185,7 +185,7 @@ class Raft {  // 每个Raft对象都是一个节点
 };
 
 // // 创建一个新的 Raft 服务器实例：对各个变量进行初始化，
-void Raft::Make(vector<PeersInfo> peers, int id) {
+void Raft::Make(vector<PeersInfo> peers, int id) { // peers是所有raft实例的RPC端口，id是当前raft实例的id。因为需要知道其他raft实例的RPC端口，所以需要传入peers
     m_peers = peers;
     // this->persister = persister;
     m_peerId = id;
@@ -214,14 +214,14 @@ void Raft::Make(vector<PeersInfo> peers, int id) {
     m_nextIndex.resize(peers.size(), 1);   // 元素初始化为1
     m_matchIndex.resize(peers.size(), 0);  // 元素初始化为0
 
-    readRaftState();
+    readRaftState();                        // 读取已经保存在本地磁盘的日志，直接加入到m_logs中
 
     pthread_t listen_tid1;
     pthread_t listen_tid2;
     pthread_t listen_tid3;
-    pthread_create(&listen_tid1, NULL, listenForVote, this);
+    pthread_create(&listen_tid1, NULL, listenForVote, this); 
     pthread_detach(listen_tid1);  // detach的含义是父线程和子线程相互分离，即使父线程结束了，只要主线程没有结束，子线程就会继续正常运行。
-    pthread_create(&listen_tid2, NULL, listenForAppend, this);
+    pthread_create(&listen_tid2, NULL, listenForAppend, this); 
     pthread_detach(listen_tid2);
     pthread_create(&listen_tid3, NULL, applyLogLoop, this);
     pthread_detach(listen_tid3);
@@ -255,9 +255,9 @@ int Raft::getMyduration(timeval last) {
     return ((now.tv_sec - last.tv_sec) * 1000000 + (now.tv_usec - last.tv_usec));
 }
 
-// 稍微解释下-200000us是因为让记录的m_lastBroadcastTime变早，这样在appendLoop中getMyduration(m_lastBroadcastTime)直接达到要求
-// 因为心跳周期是100000us
-void Raft::setBroadcastTime() {  // 函数的作用是什么？
+// 只有当前时间减去上一次发送心跳的时间大于100000us，才能发送心跳，所以这里让m_lastBroadcastTime减去200000us
+// 这样在appendLoop中getMyduration(m_lastBroadcastTime)直接达到要求，从而发送心跳
+void Raft::setBroadcastTime() {  // 设置
     gettimeofday(&m_lastBroadcastTime, NULL);
     printf("before : %ld, %ld\n", m_lastBroadcastTime.tv_sec, m_lastBroadcastTime.tv_usec);
     if (m_lastBroadcastTime.tv_usec >= 200000) {
@@ -303,14 +303,14 @@ void* Raft::electionLoop(void* arg) {
         int timeOut = rand() % 200000 + 200000;
         while (1) {
             usleep(1000);
-            raft->m_lock.lock();
+            raft->m_lock.lock(); // 整个锁中最大的耗时操作是线程的创建。
 
-            int during_time = raft->getMyduration(raft->m_lastWakeTime);  // 计算时间差
+            int during_time = raft->getMyduration(raft->m_lastWakeTime);  // 计算时间差 // 如果不加锁，那么当前计算出来的during_time，下一次时刻可能由于其他节点的心跳，导致实际的during_time和计算出来的during_time不一致
             if (raft->m_state == FOLLOWER && during_time > timeOut) {     // 随机选举超时间过了以后，没有收到leader的心跳，所以follower就变成了candidate
                 raft->m_state = CANDIDATE;
             }
 
-            if (raft->m_state == CANDIDATE && during_time > timeOut) {
+            if (raft->m_state == CANDIDATE && during_time > timeOut) { 
                 printf(" %d attempt election at term %d, timeOut is %d\n", raft->m_peerId, raft->m_curTerm, timeOut);
                 gettimeofday(&raft->m_lastWakeTime, NULL);
                 resetFlag = true;
@@ -333,22 +333,22 @@ void* Raft::electionLoop(void* arg) {
                 }
 
                 while (raft->recvVotes <= raft->m_peers.size() / 2 && raft->finishedVote != raft->m_peers.size()) {  // 要超过半数，所以这里是<=，也就是等于半数也是不能跳出while的
-                    raft->m_cond.wait(raft->m_lock.getLock());
+                    raft->m_cond.wait(raft->m_lock.getLock()); // callRequestVote中投票以后会使用raft->m_cond.signal();唤醒这里的wait
                 }
-                if (raft->m_state != CANDIDATE) {
+                if (raft->m_state != CANDIDATE) {  // 当candidate节点term小于follower节点的term时，callRequestVote中会修改m_state为FOLLOWER
                     raft->m_lock.unlock();
-                    continue;  // 进行下一次轮选举
+                    continue;  // 进行下一次轮超时选举
                 }
                 if (raft->recvVotes > raft->m_peers.size() / 2) {  // 获得了超过半数的选票，所以成为了leader
                     raft->m_state = LEADER;
 
                     for (int i = 0; i < raft->m_peers.size(); i++) {
-                        raft->m_nextIndex[i] = raft->m_logs.size() + 1;
+                        raft->m_nextIndex[i] = raft->m_logs.size() + 1; 
                         raft->m_matchIndex[i] = 0;
                     }
 
                     printf(" %d become new leader at term %d\n", raft->m_peerId, raft->m_curTerm);
-                    raft->setBroadcastTime();
+                    raft->setBroadcastTime(); // 通过修改m_lastBroadcastTime，让appendLoop中的getMyduration(m_lastBroadcastTime)达到要求，从而发送心跳、这样心跳发送的时间不就延迟了吗？这是否是一个bug？
                 }
             }
             raft->m_lock.unlock();
@@ -377,7 +377,7 @@ void* Raft::callRequestVote(void* arg) {
     client.as_client("127.0.0.1", raft->m_peers[raft->cur_peerId++].m_port.first);
 
     if (raft->cur_peerId == raft->m_peers.size() ||
-        (raft->cur_peerId == raft->m_peers.size() - 1 && raft->m_peerId == raft->cur_peerId)) {  // (raft->cur_peerId == raft->m_peers.size() - 1 && raft->m_peerId == raft->cur_peerId)是什么意思？
+        (raft->cur_peerId == raft->m_peers.size() - 1 && raft->m_peerId == raft->cur_peerId)) {  // 最后一个节点为leader节点，也需要raft->cur_peerId = 0;，不然就会出现n-1个callRequestVote线程执行完毕了，但是cur_peerId不为零的情况。
         raft->cur_peerId = 0;
     }
     raft->m_lock.unlock();
@@ -391,7 +391,7 @@ void* Raft::callRequestVote(void* arg) {
         raft->m_state = FOLLOWER;
         raft->m_curTerm = reply.term;
         raft->m_votedFor = -1;
-        raft->readRaftState();
+        raft->readRaftState();   // 为什么需要调用readRaftState？答：
         raft->m_lock.unlock();
         return NULL;
     }
@@ -432,12 +432,12 @@ RequestVoteReply Raft::requestVote(RequestVoteArgs args) {
 
     if (m_curTerm < args.term) {  // 为什么没有等号？答：因为如果等于的话，就是同一个term，那么就不需要更新了。
         m_state = FOLLOWER;
-        m_curTerm = args.term;
+        m_curTerm = args.term;  
         m_votedFor = -1;
     }
 
-    if (m_votedFor == -1 || m_votedFor == args.candidateId) {
-        m_lock.unlock();
+    if (m_votedFor == -1 || m_votedFor == args.candidateId) { // 什么时候会出现m_votedFor == args.candidateId？答：
+        m_lock.unlock(); 
         bool ret = checkLogUptodate(args.lastLogTerm, args.lastLogIndex);  //
         if (!ret)
             return reply;
@@ -480,7 +480,7 @@ void* Raft::processEntriesLoop(void* arg) {
         for (auto server : raft->m_peers) {
             if (server.m_peerId == raft->m_peerId)
                 continue;
-            pthread_create(tid + i, NULL, sendAppendEntries, raft);  // 每个节点都建立一个线程用于发送心跳
+            pthread_create(tid + i, NULL, sendAppendEntries, raft);  // leader给其他每个节点都建立一个线程用于发送心跳
             pthread_detach(tid[i]);
             i++;
         }
@@ -521,8 +521,8 @@ void Raft::push_backLog(LogEntry log) {
     m_logs.push_back(log);
 }
 
-void* Raft::sendAppendEntries(void* arg) {
-    Raft* raft = (Raft*)arg;
+void* Raft::sendAppendEntries(void* arg) { // 日志同步和心跳是由leader发起的，所以sendAppendEntries()是由leader调用的。
+    Raft* raft = (Raft*)arg;  // raft为集群中当前的leader
     buttonrpc client;
     AppendEntriesArgs args;
     raft->m_lock.lock();
@@ -535,47 +535,50 @@ void* Raft::sendAppendEntries(void* arg) {
 
     args.m_term = raft->m_curTerm;
     args.m_leaderId = raft->m_peerId;
-    args.m_prevLogIndex = raft->m_nextIndex[clientPeerId] - 1;
+    args.m_prevLogIndex = raft->m_nextIndex[clientPeerId] - 1; // 为什么args.m_prevLogIndex = raft->m_nextIndex[clientPeerId] - 1;
+                                                             //m_nextIndex：对于每台服务器， leader要发送给follower的下一条log entry的索引。
+                                                             // 初始时直接认为所有节点的下一个将要接收的日志索引和leader的一样，都为raft->m_logs.size() + 1。
+                                                             // 在leader同步日志给i节点时如果发现日志的不一致，就会修改m_nextIndex[i]。
     args.m_leaderCommit = raft->m_commitIndex;
 
-    for (int i = args.m_prevLogIndex; i < raft->m_logs.size(); i++) {  // leader中所有follower节点未接收到的日志，一次性都发送给它。
+    for (int i = args.m_prevLogIndex; i < raft->m_logs.size(); i++) {  // 如果client使用start()向m_logs中添加了日志，那么此时就会产生i < raft->m_logs.size()的情况
         args.m_sendLogs += (raft->m_logs[i].m_command + "," + to_string(raft->m_logs[i].m_term) + ";");
     }
-    if (args.m_prevLogIndex == 0) {  // 代表此follower节点没有收到任何日志？
-        args.m_prevLogTerm = 0;
-        if (raft->m_logs.size() != 0) {
-            args.m_prevLogTerm = raft->m_logs[0].m_term;
+    if (args.m_prevLogIndex == 0) {  // 日志的index都是从1开始的，比如m_prevLogIndex、m_nextIndex。但是访问m_logs时，是从0开始的。
+        args.m_prevLogTerm = 0;     
+        if (raft->m_logs.size() != 0) { // args.m_prevLogTerm为follower的term，raft->m_logs为leader的日志
+            args.m_prevLogTerm = raft->m_logs[0].m_term; // 
         }
     } else
-        args.m_prevLogTerm = raft->m_logs[args.m_prevLogIndex - 1].m_term;  // 为什么args.m_prevLogIndex减一？应该是和索引的起始有关
+        args.m_prevLogTerm = raft->m_logs[args.m_prevLogIndex - 1].m_term;  // m_prevLogIndex从1开始，而m_logs从0开始，所以要减1
 
     printf("[%d] -> [%d]'s prevLogIndex : %d, prevLogTerm : %d\n", raft->m_peerId, clientPeerId, args.m_prevLogIndex, args.m_prevLogTerm);
 
     if (raft->cur_peerId == raft->m_peers.size() ||
-        (raft->cur_peerId == raft->m_peers.size() - 1 && raft->m_peerId == raft->cur_peerId)) {  //  raft->m_peerId == raft->cur_peerId为什么会相等
+        (raft->cur_peerId == raft->m_peers.size() - 1 && raft->m_peerId == raft->cur_peerId)) {  
         raft->cur_peerId = 0;
     }
     raft->m_lock.unlock();
-    AppendEntriesReply reply = client.call<AppendEntriesReply>("appendEntries", args).val();
+    AppendEntriesReply reply = client.call<AppendEntriesReply>("appendEntries", args).val(); 
 
     raft->m_lock.lock();
     if (reply.m_term > raft->m_curTerm) {
         raft->m_state = FOLLOWER;
         raft->m_curTerm = reply.m_term;
         raft->m_votedFor = -1;
-        raft->saveRaftState();
+        raft->saveRaftState(); // 保存当前节点的状态
         raft->m_lock.unlock();
         return NULL;  // FOLLOWER没必要维护nextIndex,成为leader会更新
     }
 
     if (reply.m_success) {
         raft->m_nextIndex[clientPeerId] += raft->getCmdAndTerm(args.m_sendLogs).size();
-        raft->m_matchIndex[clientPeerId] = raft->m_nextIndex[clientPeerId] - 1;  // 为什么是m_nextIndex[clientPeerId] - 1
+        raft->m_matchIndex[clientPeerId] = raft->m_nextIndex[clientPeerId] - 1;  
 
-        vector<int> tmpIndex = raft->m_matchIndex;  // 这好像是一个超时操作
+        vector<int> tmpIndex = raft->m_matchIndex;  //
         sort(tmpIndex.begin(), tmpIndex.end());
         int realMajorityMatchIndex = tmpIndex[tmpIndex.size() / 2];
-        if (realMajorityMatchIndex > raft->m_commitIndex && raft->m_logs[realMajorityMatchIndex - 1].m_term == raft->m_curTerm) {  // 这是在干嘛？答：
+        if (realMajorityMatchIndex > raft->m_commitIndex && raft->m_logs[realMajorityMatchIndex - 1].m_term == raft->m_curTerm) {  // 超过半数的节点的index大于commitIndex，就可以提交日志
             raft->m_commitIndex = realMajorityMatchIndex;
         }
     }
@@ -587,20 +590,20 @@ void* Raft::sendAppendEntries(void* arg) {
         //     raft->m_nextIndex[clientPeerId] = min(reply.m_conflict_index, raft->m_firstIndexOfEachTerm[reply.m_conflict_term]);
         // }
 
-        if (reply.m_conflict_term != -1) {  // m_conflict_term怎么计算出来的？
+        if (reply.m_conflict_term != -1) {  // 
             int leader_conflict_index = -1;
             for (int index = args.m_prevLogIndex; index >= 1; index--) {
-                if (raft->m_logs[index - 1].m_term == reply.m_conflict_term) {
-                    leader_conflict_index = index;
+                if (raft->m_logs[index - 1].m_term == reply.m_conflict_term) { // 查找leader的m_logs中是否有m_conflict_term，
+                    leader_conflict_index = index;                             // 如果有，那么就找到了leader的m_conflict_term的第一个index
                     break;
                 }
             }
             if (leader_conflict_index != -1) {
-                raft->m_nextIndex[clientPeerId] = leader_conflict_index + 1;
+                raft->m_nextIndex[clientPeerId] = leader_conflict_index + 1; // 代表下一次给clientPeerId发送日志时，需要从raft->m_nextIndex[clientPeerId]+ 1指向位置开始发送。当然下一次也不一定能保证不冲突
             } else {
-                raft->m_nextIndex[clientPeerId] = reply.m_conflict_term;
+                raft->m_nextIndex[clientPeerId] = reply.m_conflict_index; 
             }
-        } else {
+        } else { // 代表appendEntries中发生了m_logs.size() < args.m_prevLogIndex
             raft->m_nextIndex[clientPeerId] = reply.m_conflict_index + 1;
         }
     }
@@ -608,7 +611,7 @@ void* Raft::sendAppendEntries(void* arg) {
     raft->m_lock.unlock();
 }
 
-AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) {
+AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) { // 在follower中执行
     vector<LogEntry> recvLog = getCmdAndTerm(args.m_sendLogs);
     AppendEntriesReply reply;
     m_lock.lock();
@@ -624,7 +627,7 @@ AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) {
 
     if (args.m_term >= m_curTerm) {
         if (args.m_term > m_curTerm) {
-            m_votedFor = -1;
+            m_votedFor = -1; // 为什么设置为-1，而不是设置为args.m_leaderId？答：因为在follower中，m_votedFor只有在收到candidate的投票请求时才会设置为candidate的id
             saveRaftState();
         }
         m_curTerm = args.m_term;
@@ -638,11 +641,11 @@ AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) {
     int logSize = 0;
     if (m_logs.size() == 0) {
         for (const auto& log : recvLog) {
-            push_backLog(log);
+            push_backLog(log); // 这是一个耗时操作，可以优化
         }
         saveRaftState();
         logSize = m_logs.size();
-        if (m_commitIndex < args.m_leaderCommit) {
+        if (m_commitIndex < args.m_leaderCommit) { 
             m_commitIndex = min(args.m_leaderCommit, logSize);
         }
         // persister.persist_lock.lock();
@@ -656,20 +659,20 @@ AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) {
         return reply;
     }
 
-    if (m_logs.size() < args.m_prevLogIndex) {
+    if (m_logs.size() < args.m_prevLogIndex) { // 为什么不是判断最后一个日志的index，而是使用m_logs.size()？答：本代码中为了简单，直接认为m_logs中已经存储的日志都和leader是一致的？
         printf(" [%d]'s logs.size : %d < [%d]'s prevLogIdx : %d\n", m_peerId, m_logs.size(), args.m_leaderId, args.m_prevLogIndex);
-        reply.m_conflict_index = m_logs.size();  // 索引要加1
+        reply.m_conflict_index = m_logs.size();  // 索引要加1，本项目中的所有Index都设置是从1开始，所以如果要使用*Index的话需要减一
         m_lock.unlock();
         reply.m_success = false;
-        return reply;
+        return reply; // 这里是否不应该return，而是继续判断m_logs中是否有和leader的m_logs中的日志相冲突的日志？
     }
-    if (args.m_prevLogIndex > 0 && m_logs[args.m_prevLogIndex - 1].m_term != args.m_prevLogTerm) {
+    if (args.m_prevLogIndex > 0 && m_logs[args.m_prevLogIndex - 1].m_term != args.m_prevLogTerm) { // 隐含m_logs.size() >= args.m_prevLogIndex，即复制了但未提交的日志？
         printf(" [%d]'s prevLogterm : %d != [%d]'s prevLogTerm : %d\n", m_peerId, m_logs[args.m_prevLogIndex - 1].m_term, args.m_leaderId, args.m_prevLogTerm);
 
-        reply.m_conflict_term = m_logs[args.m_prevLogIndex - 1].m_term;
+        reply.m_conflict_term = m_logs[args.m_prevLogIndex - 1].m_term;  // 位置args.m_prevLogIndex - 1上已经放了其他term的日志，这里获取term值，然后查找此term的第一个日志的index
         for (int index = 1; index <= args.m_prevLogIndex; index++) {
             if (m_logs[index - 1].m_term == reply.m_conflict_term) {
-                reply.m_conflict_index = index;  // 找到冲突term的第一个index,比索引要加1
+                reply.m_conflict_index = index;  
                 break;
             }
         }
@@ -679,7 +682,7 @@ AppendEntriesReply Raft::appendEntries(AppendEntriesArgs args) {
     }
 
     logSize = m_logs.size();
-    for (int i = args.m_prevLogIndex; i < logSize; i++) {
+    for (int i = args.m_prevLogIndex; i < logSize; i++) { // 将从args.m_prevLogIndex开始的日志都弹出，包括args.m_prevLogIndex位置的日志。因为args.m_prevLogIndex对应的是m_logs[args.m_prevLogIndex-1]
         m_logs.pop_back();
     }
     // m_logs.insert(m_logs.end(), recvLog.begin(), recvLog.end());
@@ -710,7 +713,7 @@ void Raft::kill() {
     dead = 1;
 }
 
-StartRet Raft::start(Operation op) {
+StartRet Raft::start(Operation op) { // client通过Start()向Leader添加命令
     StartRet ret;
     m_lock.lock();
     RAFT_STATE state = m_state;
@@ -824,7 +827,7 @@ void Raft::readRaftState() {
     this->m_curTerm = this->persister.cur_term;
     this->m_votedFor = this->persister.votedFor;
 
-    for (const auto& log : this->persister.logs) {  // 为什么要将persister中的logs加入到m_logs中，m_logs中没有这些logs吗？
+    for (const auto& log : this->persister.logs) {  // 为什么要将persister中的logs加入到m_logs中，m_logs中没有这些logs吗？答：readRaftState只在初始化当前节点的时候运行，所以m_logs为空
         push_backLog(log);                          // m_logs中加入log
     }
     printf(" [%d]'s term : %d, votefor : %d, logs.size() : %d\n", m_peerId, m_curTerm, m_votedFor, m_logs.size());
@@ -870,7 +873,7 @@ int main(int argc, char* argv[]) {
                 opera.op = "put";
                 opera.key = to_string(j);
                 opera.value = to_string(j);
-                raft[i].start(opera);
+                raft[i].start(opera); 
                 usleep(50000);
             }
         } else

@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "span": "cpp",
+        "*.tcc": "cpp",
+        "bitset": "cpp",
+        "cstdlib": "cpp",
+        "shared_mutex": "cpp",
+        "regex": "cpp",
+        "new": "cpp"
+    }
+}
