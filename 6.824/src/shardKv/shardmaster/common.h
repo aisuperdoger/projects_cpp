@@ -13,9 +13,9 @@ public:
         shards.resize(NShards, 0);
         groups.clear();
     }
-    int configNum;
-    vector<int> shards;
-    unordered_map<int, vector<string>> groups;
+    int configNum;      // config number
+    vector<int> shards; // shard -> gid
+    unordered_map<int, vector<string>> groups;  // gid -> servers[]
 };
 
 class JoinArgs{

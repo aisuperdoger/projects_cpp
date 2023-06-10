@@ -157,7 +157,7 @@ unordered_map<int, vector<string>> getJoinArgs(vector<int> gids){
         }
         for(int j = 1; j <= EVERY_SERVER_RAFT; j++){
             string tmp = to_string(gids[i]) + to_string(j);
-            ret[gids[i]].push_back(tmp);
+            ret[gids[i]].push_back(tmp); // gids存储了组id，每个组有5个服务器，
         }
     }
     return ret;

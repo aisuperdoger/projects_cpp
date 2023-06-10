@@ -216,7 +216,7 @@ private:
     unordered_map<int, int> m_clientSeqMap;    //只记录特定客户端已提交的最大请求ID的去重map，不需要针对分片，迁移时整个发送即可
     unordered_map<int, OpContext*> m_requestMap;  //记录当前RPC对应的上下文
 
-    unordered_map<int, unordered_map<int, unordered_map<string, string>>> toOutShards;
+    unordered_map<int, unordered_map<int, unordered_map<string, string>>> toOutShards; // 需要送出去的分片 configNUm -> shard -> (key, value)
     unordered_map<int, int> comeInShards;
     unordered_set<int> m_AvailableShards;
     unordered_map<int, unordered_set<int>> garbages;
@@ -286,20 +286,23 @@ void ShardKv::StartKvServer(vector<kvServerInfo>& kvInfo, int me, int gid, int m
     pthread_detach(listen_tid6);
 }
 
+// 定时通过类内的shardClerk对象Query新的Config，如果Config.Num大于自身，则提交一个 NewConfigOp 给Raft
+// 集群内的所有server在Raft Apply到应用层后之后一起安装这个NewConfig，保证一致性。
+// 如果新的config. shards相对于以前有变化，则可能会有关于自身的数据迁移需求
 void* ShardKv::updateConfigLoop(void* arg){
     ShardKv* kv = (ShardKv*)arg;
     while(1){
         bool isleader = kv->m_raft.getState().second;
         kv->m_lock.lock();
-        if(!isleader || kv->comeInShards.size() > 0){
+        if(!isleader || kv->comeInShards.size() > 0){ // 为什么kv->comeInShards.size() > 0时不更新config，因为这时候可能有数据迁移，不更新config，等数据迁移完了再更新
             kv->m_lock.unlock();
             usleep(50000);
             continue;
         }
         int nextCfgNum = kv->m_config.configNum + 1;
         kv->m_lock.unlock();
-        Config config = kv->m_masterClerk.Query(nextCfgNum);
-        if(config.configNum == nextCfgNum){
+        Config config = kv->m_masterClerk.Query(nextCfgNum); // leader不断地从shardctrler中获取新的config
+        if(config.configNum == nextCfgNum){ 
             Operation operation;
             operation.op = "UC";
             operation.key = "random";
@@ -429,6 +432,7 @@ MigrateRpcReply ShardKv::shardMigration(MigrateArgs args){
     return retReply;
 }
 
+// 给其他节点发送垃圾清理命令
 void* ShardKv::garbagesCollectLoop(void* arg){
     ShardKv* kv = (ShardKv*)arg;
     //都失败了也没事(网络故障)，while循环无非再过一段时间重新处理garbages直到其size == 0
@@ -607,17 +611,17 @@ void ShardKv::updateComeInAndOutShrads(Config config){
     // printf("in UC old cfgNUm is %d, newCfgNum is %d in %ld\n", oldConfig.configNum, m_config.configNum, pthread_self());
     this->m_AvailableShards.clear();
     for(int i = 0; i < config.shards.size(); i++){
-        if(config.shards[i] != this->m_groupId){
+        if(config.shards[i] != this->m_groupId){  // 本group不负责的shard
             continue;
         }
-        if(tmpToOutShardMap.count(i) || oldConfig.configNum == 0){
-            tmpToOutShardMap.erase(i);
-            m_AvailableShards.insert(i);
-        }else{
-            this->comeInShards[i] = oldConfig.configNum;
+        if(tmpToOutShardMap.count(i) || oldConfig.configNum == 0){ // oldConfig.configNum == 0代表第一次更新，那么this->m_AvailableShards不应该为空吗？为什么还要进入这个if中？
+            tmpToOutShardMap.erase(i); // 移除当前group负责的shard，只留下不负责的shard
+            this->m_AvailableShards.insert(i);
+        }else{ // 如果不在tmpToOutShardMap中，那么就是当前group新负责的shard，需要从别的group中获取这个shard的数据
+            this->comeInShards[i] = oldConfig.configNum; 
         }
     }
-    if(this->m_id == 1){
+    if(this->m_id == 1){ // 只有gid为1的才打印，没什么用，可以删掉
         if(comeInShards.size() > 0){
                 printf("In gid %d comeInShards : \n", m_groupId);
             for(auto a : comeInShards){
@@ -626,17 +630,17 @@ void ShardKv::updateComeInAndOutShrads(Config config){
         }
     }
     if(tmpToOutShardMap.size() > 0){
-        for(const auto& shard : tmpToOutShardMap){
+        for(const auto& shard : tmpToOutShardMap){ // 现在tmpToOutShardMap中为本group不负责的shard，需要将数据迁移到别的group
             unordered_map<string, string> tmpDataBase;
             tmpDataBase.clear();
             unordered_map<string, string> dataBackUp = this->m_database;
-            for(const auto& data : dataBackUp){
+            for(const auto& data : dataBackUp){ // 移除本group不负责的shard的数据，并将这些数据备份到tmpDataBase中
                 if(key2shard(data.first) == shard){
                     tmpDataBase.insert(data);
                     this->m_database.erase(data.first);
                 }
             }
-            this->toOutShards[oldConfig.configNum][shard] = tmpDataBase;
+            this->toOutShards[oldConfig.configNum][shard] = tmpDataBase; // 需要送出去的分片
             if(this->m_id == 1){
                 printf("in gid %d cfg num : %d, shard%d's data \n", m_groupId, oldConfig.configNum, shard);
                 for(auto a : tmpDataBase){
@@ -907,18 +911,18 @@ void* ShardKv::applyLoop(void* arg){
             Operation operation = msg.getOperation();
             int index = msg.commandIndex;
 
-            if(operation.op == "UC"){
+            if(operation.op == "UC"){  // updateConfig
                 Config config = getConfig(operation.value);
                 // printf("[%d] update config in num : %d\n", kv->m_id, config.configNum);
                 kv->updateComeInAndOutShrads(config);       //进行更新操作，该函数内部加锁了
             }
-            else if(operation.op == "UD"){
+            else if(operation.op == "UD"){ // 数据迁移
                 // if(kv->m_id == 1){
                 //     printf("gid[%d] update dataBase\n", kv->m_groupId);
                 // }
                 MigrateReply reply = str2MigrateReply(operation.value);
                 kv->updateDataBaseWithMigrateReply(reply);  //进行更新操作，该函数内部加锁了
-            }else{
+            }else{ 
                 kv->m_lock.lock();
                 kv->m_lastAppliedIndex = index;           //收到一个msg就更新m_lastAppliedIndex 
                 bool isOpExist = false, isSeqExist = false;
@@ -938,12 +942,12 @@ void* ShardKv::applyLoop(void* arg){
                 }
                 kv->m_clientSeqMap[operation.clientId] = operation.requestId;
 
-                if(operation.op == "GC"){  
+                if(operation.op == "GC"){   // garbagesCollect
                     //对GC来说添加client的seq序列无所谓，无需进行判断去重，类似get操作，而且会反馈到garbages里面影响gcLoop，有就是有没就是没了
                     int cfgNum = stoi(operation.key);
                     kv->clearToOutData(cfgNum, operation.requestId);
                 }else{
-                    kv->getPutAppendOnDataBase(kv, operation, opctx, isOpExist, isSeqExist, prevRequestIdx);
+                    kv->getPutAppendOnDataBase(kv, operation, opctx, isOpExist, isSeqExist, prevRequestIdx); //get Put Append
                 }
 
                 kv->m_lock.unlock();
@@ -1196,14 +1200,14 @@ void* ShardKv::snapShotLoop(void* arg){
 }
 
 vector<vector<kvServerInfo>> getShardKvServerPort(int groupsNum){
-    vector<vector<kvServerInfo>> peers(groupsNum, vector<kvServerInfo>(EVERY_SERVER_RAFT));
+    vector<vector<kvServerInfo>> peers(groupsNum, vector<kvServerInfo>(EVERY_SERVER_RAFT)); // groupsNum个组，每组EVERY_SERVER_RAFT个kvserver
     for(int idx = 0; idx < groupsNum; idx++){
         for(int i = 0; i < EVERY_SERVER_RAFT; i++){
             peers[idx][i].peersInfo.m_peerId = i;
             peers[idx][i].peersInfo.m_port.first = COMMOM_PORT + i + idx * 100;
             peers[idx][i].peersInfo.m_port.second = COMMOM_PORT + i + EVERY_SERVER_RAFT + idx * 100;
             peers[idx][i].peersInfo.isInstallFlag = false;
-            peers[idx][i].m_kvPort = (COMMOM_PORT + i + 2 * EVERY_SERVER_RAFT  + idx * 100);
+            peers[idx][i].m_kvPort = (COMMOM_PORT + i + 2 * EVERY_SERVER_RAFT  + idx * 100); // 2 * EVERY_SERVER_RAFT个端口留给raft层
         }
     }
     return peers;
@@ -1225,11 +1229,11 @@ int main(){
     srand((unsigned)time(NULL));
     initStr2PortMap(5);
     vector<vector<kvServerInfo>> servers = getShardKvServerPort(5);
-    ShardKv** kv = new ShardKv*[servers.size()];
+    ShardKv** kv = new ShardKv*[servers.size()]; // 5个组 
     vector<vector<int>> masters = getMastersPort(EVERY_SERVER_RAFT);
 
-    for(int i = 0; i < servers.size(); i++){
-        kv[i] = new ShardKv[EVERY_SERVER_RAFT];
+    for(int i = 0; i < servers.size(); i++){ // 5个组
+        kv[i] = new ShardKv[EVERY_SERVER_RAFT]; // 每个组有EVERY_SERVER_RAFT个kvserver
         // printf("shardKv%d begin print :\n", i);
         for(int j = 0; j < EVERY_SERVER_RAFT; j++){
             // printf("%d %d %d\n", servers[i][j].peersInfo.m_port.first, servers[i][j].peersInfo.m_port.second, 

@@ -323,7 +323,7 @@ void ShardMaster::doJoinLeaveMove(Operation operation){
     for(const auto& group : config.groups){
         newMap[group.first] = group.second;
     }
-    config.groups = newMap;
+    config.groups = newMap; // 拷贝一份新的groups，以便于更改
     config.configNum++;
 
     if(operation.op == "Join"){
@@ -343,15 +343,15 @@ void ShardMaster::doJoinLeaveMove(Operation operation){
         unordered_map<int, int> hash;
         for(const auto& id : groupIds){
             config.groups.erase(id);
-            hash[id] = 1;
+            hash[id] = 1;      // 标记已经删除的group
         }
         for(int i = 0; i < NShards; i++){
             if(hash.count(config.shards[i])){
-                config.shards[i] = 0;
+                config.shards[i] = 0;   // 有些分片对应的group已经被删除了，所以设为零，代表这个分片还没分配给任何group
             }
         }
         if(config.groups.empty()){      //说明此时为空，可能是都移出去了，需要清理config的其他成员变量
-            config.groups.clear();
+            config.groups.clear();      // 为空为什么还要清理？
             config.shards.resize(NShards, 0);
             return;
         }
@@ -404,7 +404,7 @@ void* ShardMaster::applyLoop(void* arg){
             if(!isSeqExist || prevRequestIdx < operation.requestId){ 
                 master->doJoinLeaveMove(operation);
             }
-        }else{
+        }else{ // 查询操作
             // printf("[%d]'s prevIdx is %d, opIdx is %d, isSeqExist is %d, cliendID is %d, op is %s\n", 
             //     master->m_id, prevRequestIdx, operation.requestId, (isSeqExist ? 1 : 0), operation.clientId, operation.op.c_str());
             if(isOpExist){
@@ -446,15 +446,15 @@ public:
 };
 
 //太长了typedef一下
-typedef priority_queue<pair<int, vector<int>>, vector<pair<int, vector<int>>>, mycmpLower> lowSizeQueue;
-typedef priority_queue<pair<int, vector<int>>, vector<pair<int, vector<int>>>, mycmpUpper> upSizeQueue;
+typedef priority_queue<pair<int, vector<int>>, vector<pair<int, vector<int>>>, mycmpLower> lowSizeQueue; // 小顶堆，比较小的会先出队
+typedef priority_queue<pair<int, vector<int>>, vector<pair<int, vector<int>>>, mycmpUpper> upSizeQueue;  // 大顶堆，比较大的会先出队
 
-//更新lower排序方式的优先队列，需要全清再按照当前的负载情况workLoad进行插值，下面的upper类似
+//更新lower排序方式的优先队列，需要全清再按照当前的负载情况workLoad进行插值，下面的syncUpperLoadSize类似
 void syncLowerLoadSize(unordered_map<int, vector<int>>& workLoad, lowSizeQueue& lowerLoadSize){
     while(!lowerLoadSize.empty()){
         lowerLoadSize.pop();
     }
-    for(const auto& load : workLoad){
+    for(const auto& load : workLoad){ // 耗时操作
         lowerLoadSize.push(load);
     }
 }   
@@ -468,11 +468,11 @@ void syncUpperLoadSize(unordered_map<int, vector<int>>& workLoad, upSizeQueue& u
     }
 }
 
-//负载均衡实现，自己写的可能不是很高效，用了两个优先队列不断更新，主要思想就是把负载最大的拿出来给负载最小的，同时更新workLoad
-//再将两个优先队列继续按照workLoad更新，迭代直到满足负载全相等或最大差一
+// 负载均衡实现，自己写的可能不是很高效，用了两个优先队列不断更新，主要思想就是把负载最大的拿出来给负载最小的，同时更新workLoad
+// 再将两个优先队列继续按照workLoad更新，迭代直到满足负载全相等或最大差一
 void ShardMaster::balanceWorkLoad(Config& config){
     lowSizeQueue lowerLoadSize;
-    unordered_map<int, vector<int>> workLoad;
+    unordered_map<int, vector<int>> workLoad;           // <gid, vector<shard>>，记录每个gid负责的shard
     for(const auto& group : config.groups){
         workLoad[group.first] = vector<int>{};          //先记录下总共有哪些gid(注意：leave去除了gid，把对应的shard置0)
     }
@@ -481,10 +481,10 @@ void ShardMaster::balanceWorkLoad(Config& config){
             workLoad[config.shards[i]].push_back(i);    //对应gid负责的分片都push_back到value中，用size表示对应gid的负载
         }
     }
-    syncLowerLoadSize(workLoad, lowerLoadSize);
-    for(int i = 0; i < config.shards.size(); i++){
+    syncLowerLoadSize(workLoad, lowerLoadSize); 
+    for(int i = 0; i < config.shards.size(); i++){ // 为0的分片，分配给负载最小的组
         if(config.shards[i] == 0){
-            auto load = lowerLoadSize.top();     //找负载最小的组
+            auto load = lowerLoadSize.top();     // 找负载最小的组
             lowerLoadSize.pop();
             workLoad[load.first].push_back(i);
             load.second.push_back(i);
@@ -494,7 +494,7 @@ void ShardMaster::balanceWorkLoad(Config& config){
     //如果没有为0的，就不断找到负载最大给分给最小的即可
     upSizeQueue upperLoadSize;
     syncUpperLoadSize(workLoad, upperLoadSize);
-    if(NShards % config.groups.size() == 0){        //根据是否正好取模分为所有gid的shards数量相同或者最大最小只差1两种情况
+    if(NShards % config.groups.size() == 0){        // 根据是否正好取模分为所有gid的shards数量相同或者最大最小只差1两种情况
         while(lowerLoadSize.top().second.size() != upperLoadSize.top().second.size()){
             workLoad[lowerLoadSize.top().first].push_back(upperLoadSize.top().second.back());
             workLoad[upperLoadSize.top().first].pop_back();

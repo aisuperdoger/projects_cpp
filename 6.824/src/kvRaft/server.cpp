@@ -15,7 +15,7 @@ typedef std::chrono::steady_clock::time_point myTime;
 class kvServerInfo{ // 本项目要建立的是kvserver，多个kvserver可以为client提供服务，不同kvserver之间的信息要保持一致。也就是说每个kvserver底层都是一个raft节点。
 public:
     PeersInfo peersInfo; //  PeersInfo中的m_port是底层raft的端口
-    vector<int> m_kvPort; // kvServer的端口
+    vector<int> m_kvPort; // kvServer的端口  //  // 使用的RPC框架是阻塞式，任务排队完成，所以server端使用多个port监听同样请求
 };
 
 // 用于定时的类，创建一个有名管道，若在指定时间内收到msg则处理业务逻辑，不然按照超时处理重试 
