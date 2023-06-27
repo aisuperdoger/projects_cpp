@@ -65,7 +65,7 @@ void TcpConnection::send(const std::string &buf)
         }
         else
         {
-            loop_->runInLoop(
+            loop_->runInLoop( // 放到loop_所属的线程中去执行
                 std::bind(&TcpConnection::sendInLoop, this, buf.c_str(), buf.size()));
         }
     }
@@ -85,8 +85,10 @@ void TcpConnection::sendInLoop(const void *data, size_t len)
         LOG_ERROR("disconnected, give up writing");
     }
 
-    // 表示channel_第一次开始写数据或者缓冲区没有待发送数据    // 内核缓冲区由满变为不满时channel_->isWriting()==true。所以!channel_->isWriting()是什么意思？？？
-    if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0) //代表内核发送缓冲区是不满的，直接将数据写入内核发送缓冲区，而不是写入用户缓冲区outputBuffer_中
+    // 表示channel_第一次开始写数据或者缓冲区没有待发送数据    
+    // channel_->isWriting()==true，代表注册了写事件，正在等待内核缓冲区变得可以写，即内核缓冲区是满的
+    // 代表内核发送缓冲区是不满的，直接将数据写入内核发送缓冲区，而不是写入用户缓冲区outputBuffer_中
+    if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0)
     {
         nwrote = ::write(channel_->fd(), data, len);
         if (nwrote >= 0)
@@ -159,7 +161,7 @@ void TcpConnection::connectEstablished()
 {
     setState(kConnected);
     channel_->tie(shared_from_this());
-    channel_->enableReading(); // 向poller注册channel的EPOLLIN读事件
+    channel_->enableReading();          // 向poller注册channel的EPOLLIN读事件
 
     // 新连接建立 执行回调
     connectionCallback_(shared_from_this());

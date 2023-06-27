@@ -28,10 +28,10 @@ class HttpResponse : public muduo::copyable
   enum HttpStatusCode
   {
     kUnknown,
-    k200Ok = 200,
-    k301MovedPermanently = 301,
-    k400BadRequest = 400,
-    k404NotFound = 404,
+    k200Ok = 200, 
+    k301MovedPermanently = 301, // 301重定向.请求的页面永久性移至另-个地址
+    k400BadRequest = 400,  // 请求错误
+    k404NotFound = 404,  // 请求的页面不存在
   };
 
   explicit HttpResponse(bool close)
@@ -52,6 +52,7 @@ class HttpResponse : public muduo::copyable
   bool closeConnection() const
   { return closeConnection_; }
 
+  // 设置文档类型(MIME)，如text/html
   void setContentType(const string& contentType)
   { addHeader("Content-Type", contentType); }
 
@@ -62,14 +63,15 @@ class HttpResponse : public muduo::copyable
   void setBody(const string& body)
   { body_ = body; }
 
-  void appendToBuffer(Buffer* output) const;
+  // 将HttpResponse对象中的内容转换为字符串，发送给客户端
+  void appendToBuffer(Buffer* output) const; 
 
  private:
   std::map<string, string> headers_;
   HttpStatusCode statusCode_;
   // FIXME: add http version
-  string statusMessage_;
-  bool closeConnection_;
+  string statusMessage_; // statusCode_对应的描述信息
+  bool closeConnection_; // 是否关闭连接 即是否是短连接
   string body_;
 };
 

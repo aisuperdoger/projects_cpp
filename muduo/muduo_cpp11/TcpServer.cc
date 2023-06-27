@@ -57,7 +57,7 @@ void TcpServer::start()
     if (started_++ == 0)    // 防止一个TcpServer对象被start多次
     {
         threadPool_->start(threadInitCallback_);    // 启动底层的loop线程池
-        loop_->runInLoop(std::bind(&Acceptor::listen, acceptor_.get()));
+        loop_->runInLoop(std::bind(&Acceptor::listen, acceptor_.get())); // 和直接执行acceptor_->listen()的区别是：这里是在mainLoop中执行的，而listen是在subLoop中执行的
     }
 }
 

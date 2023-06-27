@@ -83,7 +83,7 @@ class TcpConnection : noncopyable,
   const boost::any& getContext() const
   { return context_; }
 
-  boost::any* getMutableContext()
+  boost::any* getMutableContext() // mutable代表可以修改
   { return &context_; }
 
   void setConnectionCallback(const ConnectionCallback& cb)

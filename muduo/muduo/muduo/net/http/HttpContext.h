@@ -27,14 +27,14 @@ class HttpContext : public muduo::copyable
  public:
   enum HttpRequestParseState
   {
-    kExpectRequestLine,
-    kExpectHeaders,
-    kExpectBody,
-    kGotAll,
+    kExpectRequestLine, // 正处于解析请求行的状态
+    kExpectHeaders, // 正处于解析请求头的状态
+    kExpectBody,  // 正处于解析请求体的状态，当前未实现解析body的功能
+    kGotAll,  // 请求解析完毕
   };
 
-  HttpContext()
-    : state_(kExpectRequestLine)
+  HttpContext() 
+    : state_(kExpectRequestLine) 
   {
   }
 
@@ -49,8 +49,8 @@ class HttpContext : public muduo::copyable
   void reset()
   {
     state_ = kExpectRequestLine;
-    HttpRequest dummy;
-    request_.swap(dummy);
+    HttpRequest dummy; // 用于交换，交换后，request_就是一个空的HttpRequest对象
+    request_.swap(dummy); // 交换两个对象的内容
   }
 
   const HttpRequest& request() const

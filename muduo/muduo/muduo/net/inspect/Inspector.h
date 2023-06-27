@@ -39,6 +39,7 @@ class Inspector : noncopyable
   ~Inspector();
 
   /// Add a Callback for handling the special uri : /mudule/command
+  // 假设url为/proc/opened_files，则module为proc，command为opened_files
   void add(const string& module,
            const string& command,
            const Callback& cb,
@@ -46,18 +47,18 @@ class Inspector : noncopyable
   void remove(const string& module, const string& command);
 
  private:
-  typedef std::map<string, Callback> CommandList;
-  typedef std::map<string, string> HelpList;
+  typedef std::map<string, Callback> CommandList; // 假设url为/proc/opened_files   那么CommandList为<opened_files, callback>
+  typedef std::map<string, string> HelpList;      // opened_files和opened_files的帮助信息
 
   void start();
   void onRequest(const HttpRequest& req, HttpResponse* resp);
 
   HttpServer server_;
-  std::unique_ptr<ProcessInspector> processInspector_;
+  std::unique_ptr<ProcessInspector> processInspector_; // processInspector_指的是proc开头的url  定义类似processInspector_的类就可以定义出不同的url。
   std::unique_ptr<PerformanceInspector> performanceInspector_;
   std::unique_ptr<SystemInspector> systemInspector_;
   MutexLock mutex_;
-  std::map<string, CommandList> modules_ GUARDED_BY(mutex_);
+  std::map<string, CommandList> modules_ GUARDED_BY(mutex_);  // 假设url为/proc/opened_files   那么modules_为<proc, CommandList>
   std::map<string, HelpList> helps_ GUARDED_BY(mutex_);
 };
 

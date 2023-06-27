@@ -136,7 +136,7 @@ void EventLoop::runInLoop(Functor cb)
 }
 
 // 把cb放入队列中 唤醒loop所在的线程执行cb
-void EventLoop::queueInLoop(Functor cb)
+void EventLoop::queueInLoop(Functor cb) 
 {
     {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -144,11 +144,11 @@ void EventLoop::queueInLoop(Functor cb)
     }
 
     /**
-     * || callingPendingFunctors的意思是：当前loop正在执行doPendingFunctors，但是loop的pendingFunctors_中又加入了新的回调。此时需要通过wakeup写事件
-     * 唤醒相应的需要执行上面回调操作的loop的线程 让loop()下一次poller_->poll()不再阻塞（阻塞的话会延迟前一次新加入的回调的执行），然后
-     * 继续执行pendingFunctors_中的回调函数
+     * callingPendingFunctors==true代表当前loop正在执行doPendingFunctors，然而queueInLoop()又向pendingFunctors_中
+     * 添加了新的回调。所以使用wakeup()来立刻处理新到来的回调。
      **/
-    if (!isInLoopThread() || callingPendingFunctors_)
+    if (!isInLoopThread() || callingPendingFunctors_) // !isInLoopThread()代表当前loop不在自己的线程中执行cb，
+                                                      // 需要立刻唤醒pollRetureTime_ = poller_->poll(kPollTimeMs, &activeChannels_);处的阻塞
     {
         wakeup(); // 唤醒loop所在线程
     }

@@ -53,13 +53,13 @@ class HttpServer : noncopyable
 
  private:
   void onConnection(const TcpConnectionPtr& conn);
-  void onMessage(const TcpConnectionPtr& conn,
+  void onMessage(const TcpConnectionPtr& conn, // 收到http请求后，会调用onMessage()，onMessage()会调用onRequest(), onRequest()会调用httpCallback_。
                  Buffer* buf,
                  Timestamp receiveTime);
   void onRequest(const TcpConnectionPtr&, const HttpRequest&);
 
   TcpServer server_;
-  HttpCallback httpCallback_;
+  HttpCallback httpCallback_; // httpCallback_会在onRequest()中被调用 httpCallback_由用户设置
 };
 
 }  // namespace net

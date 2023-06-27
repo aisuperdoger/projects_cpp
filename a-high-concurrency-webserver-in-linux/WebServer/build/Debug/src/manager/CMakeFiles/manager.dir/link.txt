@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmanager.a CMakeFiles/manager.dir/fileManager.cc.o CMakeFiles/manager.dir/fileOperator.cc.o CMakeFiles/manager.dir/userManager.cc.o
+/usr/bin/ranlib libmanager.a

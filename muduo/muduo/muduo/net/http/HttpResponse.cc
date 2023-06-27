@@ -19,15 +19,15 @@ void HttpResponse::appendToBuffer(Buffer* output) const
 {
   char buf[32];
   snprintf(buf, sizeof buf, "HTTP/1.1 %d ", statusCode_);
-  output->append(buf);
+  output->append(buf); 
   output->append(statusMessage_);
   output->append("\r\n");
 
-  if (closeConnection_)
+  if (closeConnection_) // 如果是短连接，就不需要Content-Length，因为短连接是不需要知道body的长度的，即短连接不存在粘包问题
   {
     output->append("Connection: close\r\n");
   }
-  else
+  else // 如果是长连接
   {
     snprintf(buf, sizeof buf, "Content-Length: %zd\r\n", body_.size());
     output->append(buf);

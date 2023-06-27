@@ -132,16 +132,16 @@ class HttpRequest : public muduo::copyable
   Timestamp receiveTime() const
   { return receiveTime_; }
 
-  void addHeader(const char* start, const char* colon, const char* end)
+  void addHeader(const char* start, const char* colon, const char* end) // colon代表 “：" 的位置
   {
-    string field(start, colon);
+    string field(start, colon); // field代表header的名字
     ++colon;
-    while (colon < end && isspace(*colon))
+    while (colon < end && isspace(*colon)) // 去除空格
     {
       ++colon;
     }
-    string value(colon, end);
-    while (!value.empty() && isspace(value[value.size()-1]))
+    string value(colon, end); // value代表header的值
+    while (!value.empty() && isspace(value[value.size()-1])) // 去除空格
     {
       value.resize(value.size()-1);
     }
@@ -176,9 +176,9 @@ class HttpRequest : public muduo::copyable
   Method method_;
   Version version_;
   string path_;
-  string query_;
+  string query_; // url中？后面的内容
   Timestamp receiveTime_;
-  std::map<string, string> headers_;
+  std::map<string, string> headers_; // 当前并不支持带有body的http请求
 };
 
 }  // namespace net

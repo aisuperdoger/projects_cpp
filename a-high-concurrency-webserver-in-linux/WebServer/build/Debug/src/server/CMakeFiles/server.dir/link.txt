@@ -1,0 +1,2 @@
+/usr/bin/ar qc libserver.a CMakeFiles/server.dir/FTPServer.cc.o CMakeFiles/server.dir/HTTPServer.cpp.o
+/usr/bin/ranlib libserver.a

@@ -70,13 +70,16 @@ Inspector::Inspector(EventLoop* loop,
   assert(g_globalInspector == 0);
   g_globalInspector = this;
   server_.setHttpCallback(std::bind(&Inspector::onRequest, this, _1, _2));
-  processInspector_->registerCommands(this);
+  processInspector_->registerCommands(this);// 此函数中调用了当前类的add()，为什么在当前对象还没构造完毕的时候就可以调用add()呢？答：
+                                            // 因为add()中操作的数据成员已经构造完毕了，只是当前对象还没构造完毕而已。
   systemInspector_->registerCommands(this);
 #ifdef HAVE_TCMALLOC
   performanceInspector_.reset(new PerformanceInspector);
-  performanceInspector_->registerCommands(this);
+  performanceInspector_->registerCommands(this); // performanceInspector_完全可以放在类外，不需要放在类内
 #endif
-  loop->runAfter(0, std::bind(&Inspector::start, this)); // little race condition
+  // 下面的语句为 延迟一会执行Inspector::start()。因为如果不延迟，那么在Inspector::start()调用以后，
+  // 就会收到http请求，并调用onRequest()，而当前对象可能还没构造完毕，就可能出现问题。
+  loop->runAfter(0.1, std::bind(&Inspector::start, this)); // little race condition // 改进：可以让用户自己调用start()，而不是在构造函数中调用
 }
 
 Inspector::~Inspector()
@@ -90,7 +93,7 @@ void Inspector::add(const string& module,
                     const Callback& cb,
                     const string& help)
 {
-  MutexLockGuard lock(mutex_);
+  MutexLockGuard lock(mutex_); // 调用add()的时候并没有涉及对modules_的多线程操作，所以这里的锁是多余的
   modules_[module][command] = cb;
   helps_[module][command] = help;
 }
@@ -113,7 +116,7 @@ void Inspector::start()
 
 void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
 {
-  if (req.path() == "/")
+  if (req.path() == "/") // 如果进入根目录就返回所有的url和url对应的帮助信息
   {
     string result;
     MutexLockGuard lock(mutex_);
@@ -124,14 +127,15 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
       const HelpList& list = helpListI->second;
       for (const auto& it : list)
       {
+        // 比如 /proc/opened_files count /proc/self/fd
         result += "/";
-        result += helpListI->first;
+        result += helpListI->first; // /proc
         result += "/";
-        result += it.first;
+        result += it.first; // opened_files
         size_t len = helpListI->first.size() + it.first.size();
-        result += string(len >= 25 ? 1 : 25 - len, ' ');
-        result += it.second;
-        result += "\n";
+        result += string(len >= 25 ? 1 : 25 - len, ' ');  
+        result += it.second; // count /proc/self/fd（帮助信息）
+        result += "\n"; 
       }
     }
     resp->setStatusCode(HttpResponse::k200Ok);
@@ -141,7 +145,7 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
   }
   else
   {
-    std::vector<string> result = split(req.path());
+    std::vector<string> result = split(req.path()); // 按照 / 分割
     // boost::split(result, req.path(), boost::is_any_of("/"));
     //std::copy(result.begin(), result.end(), std::ostream_iterator<string>(std::cout, ", "));
     //std::cout << "\n";
@@ -150,7 +154,7 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
     {
       LOG_DEBUG << req.path();
     }
-    else if (result.size() == 1)
+    else if (result.size() == 1) 
     {
       string module = result[0];
       if (module == "favicon.ico")
@@ -180,7 +184,7 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
         if (it != commList.end())
         {
           ArgList args(result.begin()+2, result.end());
-          if (it->second)
+          if (it->second) // 调用回调函数
           {
             resp->setStatusCode(HttpResponse::k200Ok);
             resp->setStatusMessage("OK");

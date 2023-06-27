@@ -82,6 +82,10 @@
         "typeindex": "cpp",
         "typeinfo": "cpp",
         "valarray": "cpp",
-        "variant": "cpp"
-    }
+        "variant": "cpp",
+        "filesystem": "cpp"
+    },
+    "C_Cpp.clang_format_path": "",
+    "C_Cpp.clang_format_style": "{BasedOnStyle: Chromium, IndentWidth: 4,ColumnLimit: 0}",
+    "cmake.sourceDirectory": "/home/zwl/projects/cpp/projects_cpp/a-high-concurrency-webserver-in-linux/WebServer"
 }
