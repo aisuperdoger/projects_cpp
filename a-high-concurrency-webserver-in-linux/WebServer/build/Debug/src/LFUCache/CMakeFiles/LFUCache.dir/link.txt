@@ -1,2 +1,0 @@
-/usr/bin/ar qc libLFUCache.a CMakeFiles/LFUCache.dir/LFUCache.cc.o
-/usr/bin/ranlib libLFUCache.a

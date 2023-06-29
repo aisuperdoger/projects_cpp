@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -Wall -std=c++11 -D_PTHREADS -Wno-unused-parameter -O0 -rdynamic CMakeFiles/test_MemoryPool.dir/test_MemoryPool.cc.o -o test_MemoryPool  ../libmemory.a ../../base/libserver_base.a -lpthread -lrt 
