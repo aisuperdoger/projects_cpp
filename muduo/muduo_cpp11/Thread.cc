@@ -5,7 +5,7 @@
 
 std::atomic_int Thread::numCreated_(0);
 
-Thread::Thread(ThreadFunc func, const std::string &name)
+Thread::Thread(ThreadFunc func, const std::string &name) // 构造函数中不创建线程，而是在start()的时候开启线程。
     : started_(false)
     , joined_(false)
     , tid_(0)
@@ -23,13 +23,13 @@ Thread::~Thread()
     }
 }
 
-void Thread::start()                                                        // 一个Thread对象 记录的就是一个新线程的详细信息
+void Thread::start()                                                        // 一个Thread对象 记录的就是一个新线程的详细信息 
 {
     started_ = true;
     sem_t sem;
     sem_init(&sem, false, 0);                                               // false指的是 不设置进程间共享
     // 开启线程
-    thread_ = std::shared_ptr<std::thread>(new std::thread([&]() {
+    thread_ = std::shared_ptr<std::thread>(new std::thread([&]() {          //  "&" 表示以引用方式捕获外部作用域中的变量
         tid_ = CurrentThread::tid();                                        // 获取线程的tid值
         sem_post(&sem);                                                     // 当获取到了tid_以后，再解除sem_wait的阻塞。防止还没获取到tid_，start()就已经结束了。
         func_();                                                            // 开启一个新线程 专门执行该线程函数

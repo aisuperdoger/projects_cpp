@@ -415,7 +415,7 @@ MigrateRpcReply ShardKv::shardMigration(MigrateArgs args){
     str = MigrateReply2Str(reply);
     retReply.reply = str;
     m_lock.lock();
-    if(args.configNum >= this->m_config.configNum){
+    if(args.configNum >= this->m_config.configNum){ // 相等的时候为什么要返回错误，不应该是不等的时候返回错误吗
         m_lock.unlock();
         return retReply;
     }

@@ -27,6 +27,7 @@ RpcServer::RpcServer(EventLoop* loop,
 //       std::bind(&RpcServer::onMessage, this, _1, _2, _3));
 }
 
+// 将服务注册到services_中
 void RpcServer::registerService(google::protobuf::Service* service)
 {
   const google::protobuf::ServiceDescriptor* desc = service->GetDescriptor();

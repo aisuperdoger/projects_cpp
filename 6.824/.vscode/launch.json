@@ -11,7 +11,7 @@
             // program 指定调试那个可执行文件，需要绝对路径
             // ${fileDirname} 当前打开的文件所在的绝对路径，不包括文件名
             // ${fileBasenameNoExtension} 当前打开的文件的文件名，不包括路径和后缀名
-            "program": "/home/ubuntu/projects/cpp/projects_cpp/6.824/src/shardKv/client",
+            "program": "/home/zwl/projects/cpp/projects_cpp/6.824/src/shardKv/Skiplist-CPP/a.out",
             "args": [
                 "3"
             ],

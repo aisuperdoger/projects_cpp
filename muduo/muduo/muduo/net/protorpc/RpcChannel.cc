@@ -57,8 +57,8 @@ void RpcChannel::CallMethod(const ::google::protobuf::MethodDescriptor* method,
   message.set_type(REQUEST);
   int64_t id = id_.incrementAndGet();
   message.set_id(id);
-  message.set_service(method->service()->full_name());
-  message.set_method(method->name());
+  message.set_service(method->service()->full_name()); // 如 "sudoku.SudokuService"
+  message.set_method(method->name()); // 如 "Solve"
   message.set_request(request->SerializeAsString()); // FIXME: error check
 
   OutstandingCall out = { response, done };
@@ -83,7 +83,7 @@ void RpcChannel::onRpcMessage(const TcpConnectionPtr& conn,
   assert(conn == conn_);
   //printf("%s\n", message.DebugString().c_str());
   RpcMessage& message = *messagePtr;
-  if (message.type() == RESPONSE)
+  if (message.type() == RESPONSE) // 收到服务端的响应
   {
     int64_t id = message.id();
     assert(message.has_response() || message.has_error());
@@ -113,7 +113,7 @@ void RpcChannel::onRpcMessage(const TcpConnectionPtr& conn,
       }
     }
   }
-  else if (message.type() == REQUEST)
+  else if (message.type() == REQUEST) // 收到客户端的请求
   {
     // FIXME: extract to a function
     ErrorCode error = WRONG_PROTO;
@@ -172,7 +172,7 @@ void RpcChannel::onRpcMessage(const TcpConnectionPtr& conn,
   }
 }
 
-void RpcChannel::doneCallback(::google::protobuf::Message* response, int64_t id)
+void RpcChannel::doneCallback(::google::protobuf::Message* response, int64_t id) // 执行done.Run()时会调用此函数
 {
   std::unique_ptr<google::protobuf::Message> d(response);
   RpcMessage message;

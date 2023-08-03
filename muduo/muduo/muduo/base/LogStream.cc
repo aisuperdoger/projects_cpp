@@ -68,6 +68,9 @@ size_t convert(char buf[], T value)
 
 size_t convertHex(char buf[], uintptr_t value)
 {
+  // uintptr_t对 于32平台来说就是unsigned int,
+ // 对于64位平台来说就是 unsigned long int
+
   uintptr_t i = value;
   char* p = buf;
 
@@ -207,7 +210,7 @@ std::string formatIEC(int64_t s)
 template<int SIZE>
 const char* FixedBuffer<SIZE>::debugString()
 {
-  *cur_ = '\0';
+  *cur_ = '\0'; 
   return data_;
 }
 
@@ -238,14 +241,14 @@ void LogStream::formatInteger(T v)
 {
   if (buffer_.avail() >= kMaxNumericSize)
   {
-    size_t len = convert(buffer_.current(), v);
-    buffer_.add(len);
+    size_t len = convert(buffer_.current(), v); // 将数字转换为字符串存储在buffer_中
+    buffer_.add(len); // 调整cur_指针
   }
 }
 
 LogStream& LogStream::operator<<(short v)
 {
-  *this << static_cast<int>(v);
+  *this << static_cast<int>(v); 
   return *this;
 }
 

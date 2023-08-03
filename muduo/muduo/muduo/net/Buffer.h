@@ -232,7 +232,7 @@ class Buffer : public muduo::copyable
   ///
   void appendInt32(int32_t x)
   {
-    int32_t be32 = sockets::hostToNetwork32(x);
+    int32_t be32 = sockets::hostToNetwork32(x); // 将数据转换为大端字节序
     append(&be32, sizeof be32);
   }
 

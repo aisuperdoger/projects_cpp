@@ -87,7 +87,7 @@ void HttpServer::onRequest(const TcpConnectionPtr& conn, const HttpRequest& req)
   const string& connection = req.getHeader("Connection");
   bool close = connection == "close" ||
     (req.getVersion() == HttpRequest::kHttp10 && connection != "Keep-Alive"); // http1.0不支持没有Connection: Keep-Alive，即不支持长连接。
-  HttpResponse response(close); //  close代表处理完请求是否要关闭连接。
+  HttpResponse response(close);  //  close代表处理完请求是否要关闭连接。
   httpCallback_(req, &response); // 回调用户定义的httpCallback_，用户可以在此回调中设置response。
   Buffer buf;
   response.appendToBuffer(&buf); // 将response写入buf

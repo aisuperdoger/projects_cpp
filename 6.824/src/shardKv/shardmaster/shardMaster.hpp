@@ -476,9 +476,9 @@ void ShardMaster::balanceWorkLoad(Config& config){
     for(const auto& group : config.groups){
         workLoad[group.first] = vector<int>{};          //先记录下总共有哪些gid(注意：leave去除了gid，把对应的shard置0)
     }
-    for(int i = 0; i < config.shards.size(); i++){      //先把为0的部分分配给最小的负载，其实相当于就是再处理move和初始化的join(一开始都为0)
+    for(int i = 0; i < config.shards.size(); i++){      // 0代表当前分片不属于任何组，还没被分配组
         if(config.shards[i] != 0){
-            workLoad[config.shards[i]].push_back(i);    //对应gid负责的分片都push_back到value中，用size表示对应gid的负载
+            workLoad[config.shards[i]].push_back(i);    //对应gid负责的分片都push_back到value中
         }
     }
     syncLowerLoadSize(workLoad, lowerLoadSize); 

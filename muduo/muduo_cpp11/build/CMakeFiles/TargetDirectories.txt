@@ -1,3 +1,0 @@
-/home/ubuntu/projects/cpp/projects_cpp/muduo_cpp11/build/CMakeFiles/rebuild_cache.dir
-/home/ubuntu/projects/cpp/projects_cpp/muduo_cpp11/build/CMakeFiles/edit_cache.dir
-/home/ubuntu/projects/cpp/projects_cpp/muduo_cpp11/build/CMakeFiles/mymuduo.dir

@@ -52,14 +52,14 @@ void ProtobufCodecLite::fillEmptyBuffer(muduo::net::Buffer* buf,
   buf->appendInt32(checkSum);
   assert(buf->readableBytes() == tag_.size() + byte_size + kChecksumLen); (void) byte_size;
   int32_t len = sockets::hostToNetwork32(static_cast<int32_t>(buf->readableBytes()));
-  buf->prepend(&len, sizeof len);
+  buf->prepend(&len, sizeof len); 
 }
 
 void ProtobufCodecLite::onMessage(const TcpConnectionPtr& conn,
                                   Buffer* buf,
                                   Timestamp receiveTime)
 {
-  while (buf->readableBytes() >= static_cast<uint32_t>(kMinMessageLen+kHeaderLen))
+  while (buf->readableBytes() >= static_cast<uint32_t>(kMinMessageLen+kHeaderLen)) // kMinMessageLen+kHeaderLen是什么意思？答：
   {
     const int32_t len = buf->peekInt32();
     if (len > kMaxMessageLen || len < kMinMessageLen)
@@ -80,8 +80,8 @@ void ProtobufCodecLite::onMessage(const TcpConnectionPtr& conn,
       if (errorCode == kNoError)
       {
         // FIXME: try { } catch (...) { }
-        messageCallback_(conn, message, receiveTime);
-        buf->retrieve(kHeaderLen+len);
+        messageCallback_(conn, message, receiveTime); // 调用自定义的处理函数，如SudokuService中的Solve()，然后将response发送出去。
+        buf->retrieve(kHeaderLen+len); // 从buf中移除已经处理过的数据
       }
       else
       {
@@ -195,7 +195,7 @@ int32_t ProtobufCodecLite::asInt32(const char* buf)
 int32_t ProtobufCodecLite::checksum(const void* buf, int len)
 {
   return static_cast<int32_t>(
-      ::adler32(1, static_cast<const Bytef*>(buf), len));
+      ::adler32(1, static_cast<const Bytef*>(buf), len)); // 计算Adler-32 校验和，Adler-32 是一种校验和算法，常用于数据传输和数据存储中的数据完整性校验。
 }
 
 bool ProtobufCodecLite::validateChecksum(const char* buf, int len)

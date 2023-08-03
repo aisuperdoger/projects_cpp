@@ -259,7 +259,7 @@ GetReply KVServer::get(GetArgs args){
     m_lock.lock();
     m_requestMap.erase(ret.m_cmdIndex);
     m_lock.unlock();
-    return reply;
+    return reply; 
 }
 
 //PRChandler for put/append-request

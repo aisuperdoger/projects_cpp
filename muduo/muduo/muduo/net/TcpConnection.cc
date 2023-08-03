@@ -198,7 +198,7 @@ void TcpConnection::shutdown()
   {
     setState(kDisconnecting);
     // FIXME: shared_from_this()?
-    loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, this));
+    loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, this)); // &符号是用于获取一个函数或成员函数的地址  它用于创建一个函数对象 std::bind返回一个新的函数对象。
   }
 }
 

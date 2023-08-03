@@ -11,8 +11,8 @@
             // program 指定调试那个可执行文件，需要绝对路径
             // ${fileDirname} 当前打开的文件所在的绝对路径，不包括文件名
             // ${fileBasenameNoExtension} 当前打开的文件的文件名，不包括路径和后缀名
-            "program": "${workspaceRoot}/muduo/build/debug-cpp11/bin/protobuf_rpc_sudoku_server", 
-            "args": [],
+            "program": "${workspaceRoot}/build/debug-cpp11/bin/protobuf_rpc_sudoku_client", 
+            "args": ["127.0.0.1"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

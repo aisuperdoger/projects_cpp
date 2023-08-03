@@ -55,7 +55,8 @@ void Channel::handleEvent(Timestamp receiveTime)
 {
     if (tied_)
     {
-        std::shared_ptr<void> guard = tie_.lock();
+        std::shared_ptr<void> guard = tie_.lock(); // lock() 检查 weak_ptr 所指的对象是否仍存在，如果存在，返回一个指向共享对象的 
+                                                    // shared_ptr。返回的这个 shared_ptr 会使引用计数加 1。
         if (guard)
         {
             handleEventWithGuard(receiveTime);

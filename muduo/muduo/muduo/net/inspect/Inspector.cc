@@ -184,13 +184,13 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
         if (it != commList.end())
         {
           ArgList args(result.begin()+2, result.end());
-          if (it->second) // 调用回调函数
+          if (it->second) 
           {
             resp->setStatusCode(HttpResponse::k200Ok);
             resp->setStatusMessage("OK");
-            resp->setContentType("text/plain");
-            const Callback& cb = it->second;
-            resp->setBody(cb(req.method(), args));
+            resp->setContentType("text/plain"); 
+            const Callback& cb = it->second; 
+            resp->setBody(cb(req.method(), args)); // 调用回调函数
             ok = true;
           }
         }

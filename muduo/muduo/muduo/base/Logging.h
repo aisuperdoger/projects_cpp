@@ -78,21 +78,19 @@ class Logger
   static void setTimeZone(const TimeZone& tz);
 
  private:
+  class Impl {
+   public:
+    typedef Logger::LogLevel LogLevel;
+    Impl(LogLevel level, int old_errno, const SourceFile& file, int line);
+    void formatTime();
+    void finish();
 
-class Impl
-{
- public:
-  typedef Logger::LogLevel LogLevel;
-  Impl(LogLevel level, int old_errno, const SourceFile& file, int line);
-  void formatTime();
-  void finish();
-
-  Timestamp time_;
-  LogStream stream_;
-  LogLevel level_;
-  int line_;
-  SourceFile basename_;
-};
+    Timestamp time_;
+    LogStream stream_;
+    LogLevel level_;
+    int line_;
+    SourceFile basename_;
+  };
 
   Impl impl_;
 
@@ -121,17 +119,26 @@ inline Logger::LogLevel Logger::logLevel()
 //   else
 //     logWarnStream << "Bad news";
 //
-#define LOG_TRACE if (muduo::Logger::logLevel() <= muduo::Logger::TRACE) \
+#define LOG_TRACE                                        \
+  if (muduo::Logger::logLevel() <= muduo::Logger::TRACE) \
   muduo::Logger(__FILE__, __LINE__, muduo::Logger::TRACE, __func__).stream()
-#define LOG_DEBUG if (muduo::Logger::logLevel() <= muduo::Logger::DEBUG) \
+// if不满足时，此函数代码不会执行
+// __FILE__调用LOG_TRACE的cpp文件名 __LINE__在哪一行调用的 __func__哪个函数
+// 上面muduo::Logger构建的匿名对象在被使用完毕后，会立即调用析构函数，从而将缓冲区的数据输出到指定设备上。
+#define LOG_DEBUG                                        \
+  if (muduo::Logger::logLevel() <= muduo::Logger::DEBUG) \
   muduo::Logger(__FILE__, __LINE__, muduo::Logger::DEBUG, __func__).stream()
 #define LOG_INFO if (muduo::Logger::logLevel() <= muduo::Logger::INFO) \
   muduo::Logger(__FILE__, __LINE__).stream()
 #define LOG_WARN muduo::Logger(__FILE__, __LINE__, muduo::Logger::WARN).stream()
 #define LOG_ERROR muduo::Logger(__FILE__, __LINE__, muduo::Logger::ERROR).stream()
 #define LOG_FATAL muduo::Logger(__FILE__, __LINE__, muduo::Logger::FATAL).stream()
-#define LOG_SYSERR muduo::Logger(__FILE__, __LINE__, false).stream()
-#define LOG_SYSFATAL muduo::Logger(__FILE__, __LINE__, true).stream()
+#define LOG_SYSERR                         \
+  muduo::Logger(__FILE__, __LINE__, false) \
+      .stream()  // false代表不会退出程序 即ERROR
+#define LOG_SYSFATAL                      \
+  muduo::Logger(__FILE__, __LINE__, true) \
+      .stream()  // true代表会退出程序 即FATAL 会根据errno判断输出的错误信息
 
 const char* strerror_tl(int savedErrno);
 

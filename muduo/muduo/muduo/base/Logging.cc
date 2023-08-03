@@ -46,7 +46,7 @@ const char* strerror_tl(int savedErrno)
 
 Logger::LogLevel initLogLevel()
 {
-  if (::getenv("MUDUO_LOG_TRACE"))
+  if (::getenv("MUDUO_LOG_TRACE"))  // 系统的环境变量
     return Logger::TRACE;
   else if (::getenv("MUDUO_LOG_DEBUG"))
     return Logger::DEBUG;
@@ -124,7 +124,7 @@ Logger::Impl::Impl(LogLevel level, int savedErrno, const SourceFile& file, int l
   CurrentThread::tid();
   stream_ << T(CurrentThread::tidString(), CurrentThread::tidStringLength());
   stream_ << T(LogLevelName[level], 6);
-  if (savedErrno != 0)
+  if (savedErrno != 0)  // 即errno != 0
   {
     stream_ << strerror_tl(savedErrno) << " (errno=" << savedErrno << ") ";
   }
@@ -196,12 +196,12 @@ Logger::Logger(SourceFile file, int line, bool toAbort)
 Logger::~Logger()
 {
   impl_.finish();
-  const LogStream::Buffer& buf(stream().buffer());
-  g_output(buf.data(), buf.length());
+  const LogStream::Buffer& buf(stream().buffer()); // 使用引用获取stream().buffer()
+  g_output(buf.data(), buf.length()); // g_output默认使用fwrite将日志输出到标准输出中
   if (impl_.level_ == FATAL)
   {
     g_flush();
-    abort();
+    abort(); // 终止程序 
   }
 }
 

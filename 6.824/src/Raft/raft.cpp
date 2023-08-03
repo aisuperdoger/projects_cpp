@@ -256,7 +256,7 @@ int Raft::getMyduration(timeval last) {
 }
 
 // 只有当前时间减去上一次发送心跳的时间大于100000us，才能发送心跳，所以这里让m_lastBroadcastTime减去200000us
-// 这样在appendLoop中getMyduration(m_lastBroadcastTime)直接达到要求，从而发送心跳
+// 这样在processEntriesLoop中getMyduration(raft->m_lastBroadcastTime)直接达到要求，从而发送心跳
 void Raft::setBroadcastTime() {  // 设置
     gettimeofday(&m_lastBroadcastTime, NULL);
     printf("before : %ld, %ld\n", m_lastBroadcastTime.tv_sec, m_lastBroadcastTime.tv_usec);
@@ -348,7 +348,7 @@ void* Raft::electionLoop(void* arg) {
                     }
 
                     printf(" %d become new leader at term %d\n", raft->m_peerId, raft->m_curTerm);
-                    raft->setBroadcastTime(); // 通过修改m_lastBroadcastTime，让appendLoop中的getMyduration(m_lastBroadcastTime)达到要求，从而发送心跳、这样心跳发送的时间不就延迟了吗？这是否是一个bug？
+                    raft->setBroadcastTime(); // 通过修改m_lastBroadcastTime，让processEntriesLoop中的getMyduration(raft->m_lastBroadcastTime)达到要求，从而发送心跳、这样心跳发送的时间不就延迟了吗？这是否是一个bug？
                 }
             }
             raft->m_lock.unlock();
@@ -382,13 +382,13 @@ void* Raft::callRequestVote(void* arg) {
     }
     raft->m_lock.unlock();
 
-    RequestVoteReply reply = client.call<RequestVoteReply>("requestVote", args).val();  // 调用其他的机器的requestVote，其他机器会放回他的投票状态。
+    RequestVoteReply reply = client.call<RequestVoteReply>("requestVote", args).val();  // 调用其他的机器的requestVote，其他机器会返回他的投票状态。
 
     raft->m_lock.lock();
     raft->finishedVote++;
     raft->m_cond.signal();               // 通知electionLoop，已经收到了一个投票
     if (reply.term > raft->m_curTerm) {  // 当前节点的term太小，不能作为leader
-        raft->m_state = FOLLOWER;
+        raft->m_state = FOLLOWER;       // 如果一个candidate或者leader发现自己的任期号过期了，它会立即回到follower状态。
         raft->m_curTerm = reply.term;
         raft->m_votedFor = -1;
         raft->readRaftState();   // 为什么需要调用readRaftState？答：
@@ -436,7 +436,7 @@ RequestVoteReply Raft::requestVote(RequestVoteArgs args) {
         m_votedFor = -1;
     }
 
-    if (m_votedFor == -1 || m_votedFor == args.candidateId) { // 什么时候会出现m_votedFor == args.candidateId？答：
+    if (m_votedFor == -1 || m_votedFor == args.candidateId) { // 什么时候会出现m_votedFor == args.candidateId？答：当一个节点的term比较小，但是它的日志比较新，所以它会投票给一个term比较大的节点，这个时候就会出现m_votedFor == args.candidateId
         m_lock.unlock(); 
         bool ret = checkLogUptodate(args.lastLogTerm, args.lastLogIndex);  //
         if (!ret)
@@ -583,7 +583,7 @@ void* Raft::sendAppendEntries(void* arg) { // 日志同步和心跳是由leader�
         }
     }
 
-    if (!reply.m_success) {
+    if (!reply.m_success) { 
         // if(!raft->m_firstIndexOfEachTerm.count(reply.m_conflict_term)){
         //     raft->m_nextIndex[clientPeerId]--;
         // }else{
