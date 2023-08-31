@@ -37,7 +37,7 @@ class Singleton : noncopyable
 
   static T& instance()
   {
-    pthread_once(&ponce_, &Singleton::init);
+    pthread_once(&ponce_, &Singleton::init); // 保证只创建一次
     assert(value_ != NULL);
     return *value_;
   }
@@ -48,7 +48,7 @@ class Singleton : noncopyable
     value_ = new T();
     if (!detail::has_no_destroy<T>::value)
     {
-      ::atexit(destroy);
+      ::atexit(destroy); // 定义了程序退出时调用的函数，因为析构函数放在了private中，
     }
   }
 
@@ -63,7 +63,7 @@ class Singleton : noncopyable
 
  private:
   static pthread_once_t ponce_;
-  static T*             value_;
+  static T*             value_; // 静态变量属于类
 };
 
 template<typename T>

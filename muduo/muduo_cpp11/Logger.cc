@@ -6,8 +6,8 @@
 // 获取日志唯一的实例对象 单例
 Logger &Logger::instance()
 {
-    static Logger logger;
-    return logger;
+  static Logger logger;  // 属于函数的static变量，只初始化一次。
+  return logger;
 }
 
 // 设置日志级别
