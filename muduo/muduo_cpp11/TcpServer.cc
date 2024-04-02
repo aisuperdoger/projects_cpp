@@ -38,7 +38,7 @@ TcpServer::~TcpServer()
     for(auto &item : connections_)
     {
         TcpConnectionPtr conn(item.second);
-        item.second.reset();    // 把原始的智能指针复位 让栈空间的TcpConnectionPtr conn指向该对象 当conn出了其作用域 即可释放智能指针指向的对象
+        item.second.reset();    // 把原始的智能指针复位 让栈空间的TcpConnectionPtr conn指向该对象 当conn出了其作用域 即可释放智能指针指向的对象 当智能指针调用了reset函数的时候，就不会再指向这个对象了。
         // 销毁连接
         conn->getLoop()->runInLoop(
             std::bind(&TcpConnection::connectDestroyed, conn));
@@ -57,7 +57,8 @@ void TcpServer::start()
     if (started_++ == 0)    // 防止一个TcpServer对象被start多次
     {
         threadPool_->start(threadInitCallback_);    // 启动底层的loop线程池
-        loop_->runInLoop(std::bind(&Acceptor::listen, acceptor_.get())); // 和直接执行acceptor_->listen()的区别是：这里是在mainLoop中执行的，而listen是在subLoop中执行的
+        loop_->runInLoop(std::bind(&Acceptor::listen, acceptor_.get())); // 和直接执行acceptor_->listen()的区别是：这里是在mainLoop中执行的，而listen是在subLoop中执行的 
+                                                                         // 这里调用listen,应该是为了验证sockfd（服务器fd）是否可以用，然后将fd注册到epoll中。
     }
 }
 
@@ -88,21 +89,21 @@ void TcpServer::newConnection(int sockfd, const InetAddress &peerAddr)
                                             connName,
                                             sockfd,
                                             localAddr,
-                                            peerAddr));
+                                            peerAddr)); // 堆上分配空间，即conn的成员对象buffer也是在堆上分配空间的。
     connections_[connName] = conn;
     // 下面的回调都是用户设置给TcpServer => TcpConnection的，至于Channel绑定的则是TcpConnection设置的四个，handleRead,handleWrite... 这下面的回调用于handlexxx函数中
-    conn->setConnectionCallback(connectionCallback_);
+    conn->setConnectionCallback(connectionCallback_);  // 下面会立刻调用
     conn->setMessageCallback(messageCallback_);
     conn->setWriteCompleteCallback(writeCompleteCallback_);
 
     // 设置了如何关闭连接的回调
-    conn->setCloseCallback(
+    conn->setCloseCallback( 
         std::bind(&TcpServer::removeConnection, this, std::placeholders::_1));
 
     ioLoop->runInLoop(
         std::bind(&TcpConnection::connectEstablished, conn));
 }
-
+// removeConnection被作为回调函数注册在了conn->setCloseCallback()中，但是loop_还是主线程的，所以子线程将removeConnectionInLoop放到主线程的任务队列中，主线程会执行这个任务
 void TcpServer::removeConnection(const TcpConnectionPtr &conn)
 {
     loop_->runInLoop(

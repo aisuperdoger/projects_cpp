@@ -24,7 +24,7 @@ const int kPollTimeMs = 10000; // 10000毫秒 = 10秒钟
  * 参数说明：
  *      initval,初始化计数器的值。
  *      flags, EFD_NONBLOCK,设置socket为非阻塞。
- *             EFD_CLOEXEC，执行fork的时候，在父进程中的描述符会自动关闭，子进程中的描述符保留。
+ *             EFD_CLOEXEC，表示子进程在执行exec的时候，该文件描述符就需要进行关闭。
  * 场景：
  *     eventfd可以用于同一个进程之中的线程之间的通信。
  *     eventfd还可以用于同亲缘关系的进程之间的通信。
@@ -145,7 +145,7 @@ void EventLoop::queueInLoop(Functor cb)
 
     /**
      * callingPendingFunctors==true代表当前loop正在执行doPendingFunctors，然而queueInLoop()又向pendingFunctors_中
-     * 添加了新的回调。所以使用wakeup()来立刻处理新到来的回调。
+     * 添加了新的回调。所以使用wakeup()来触发epoll树上的eventfd，当前任务处理完毕之后就会再次触发去处理队列中的任务。
      **/
     if (!isInLoopThread() || callingPendingFunctors_) // !isInLoopThread()代表当前loop不在自己的线程中执行cb，
                                                       // 需要立刻唤醒pollRetureTime_ = poller_->poll(kPollTimeMs, &activeChannels_);处的阻塞
@@ -158,7 +158,7 @@ void EventLoop::queueInLoop(Functor cb)
 void EventLoop::handleRead()
 {
     uint64_t one = 1;
-    ssize_t n = read(wakeupFd_, &one, sizeof(one));
+    ssize_t n = read(wakeupFd_, &one, sizeof(one)); // 计数不为零是有可读事件发生，read 之后计数会清零，write 则会递增计数器。
     if (n != sizeof(one))
     {
         LOG_ERROR("EventLoop::handleRead() reads %lu bytes instead of 8\n", n);

@@ -59,13 +59,13 @@ void TcpConnection::send(const std::string &buf)
 {
     if (state_ == kConnected)
     {
-        if (loop_->isInLoopThread()) // 这种是对于单个reactor的情况 用户调用conn->send时 loop_即为当前线程
+        if (loop_->isInLoopThread()) 
         {
             sendInLoop(buf.c_str(), buf.size());
         }
         else
         {
-            loop_->runInLoop( // 放到loop_所属的线程中去执行
+            loop_->runInLoop( // 每个连接都由一个TCPConnection对象负责，并且每个TCPConnection都存在于某个线程loop_中，如果其他线程需要需要向此tcp连接发送消息，则需要使用loop_->runInLoop
                 std::bind(&TcpConnection::sendInLoop, this, buf.c_str(), buf.size()));
         }
     }
@@ -121,17 +121,17 @@ void TcpConnection::sendInLoop(const void *data, size_t len)
      * channel的writeCallback_实际上就是TcpConnection设置的handleWrite回调，
      * 把发送缓冲区outputBuffer_的内容全部发送完成
      **/
-    if (!faultError && remaining > 0)
+    if (!faultError && remaining > 0) // remaining > 0说明内核缓冲区满了，但是还有数据没有发送，
     {
         // 目前发送缓冲区剩余的待发送的数据的长度
-        size_t oldLen = outputBuffer_.readableBytes();
+        size_t oldLen = outputBuffer_.readableBytes(); // 可能是其他时候还有余留在outputBuffer_的数据还没发送
         if (oldLen + remaining >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)
         {
             loop_->queueInLoop(
-                std::bind(highWaterMarkCallback_, shared_from_this(), oldLen + remaining));
+                std::bind(highWaterMarkCallback_, shared_from_this(), oldLen + remaining)); // 当超过一定值，可以输出一些提示信息，或进行处理
         }
         outputBuffer_.append((char *)data + nwrote, remaining);
-        if (!channel_->isWriting())
+        if (!channel_->isWriting()) //  remaining > 0说明内核缓冲区满了，所以如果没有监控可写事件时，需要通过enableWriting()设置可写事件
         {
             channel_->enableWriting(); // 这里一定要注册channel的写事件 否则poller不会给channel通知epollout 当内核缓冲区从满变为不满时，会调用handleWrite
         }
@@ -175,7 +175,7 @@ void TcpConnection::connectDestroyed()
         channel_->disableAll(); // 把channel的所有感兴趣的事件从poller中删除掉
         connectionCallback_(shared_from_this());
     }
-    channel_->remove(); // 把channel从poller中删除掉
+    channel_->remove(); 
 }
 
 // 读是相对服务器而言的 当对端客户端有数据到达 服务器端检测到EPOLLIN 就会触发该fd上的回调 handleRead取读走对端发来的数据
@@ -209,7 +209,7 @@ void TcpConnection::handleWrite()
         ssize_t n = outputBuffer_.writeFd(channel_->fd(), &savedErrno);
         if (n > 0)
         {
-            outputBuffer_.retrieve(n); // 从outputBuffer_中取出n个字节的数据
+            outputBuffer_.retrieve(n); // 从outputBuffer_中删除n个字节的数据
             if (outputBuffer_.readableBytes() == 0) // 说明outputBuffer_中的数据全部发送完成 // 如果还有数据没有发送，此时由于没有执行channel_->disableWriting();所以会继续触发handleWrite
             {
                 channel_->disableWriting();     // 取消对写事件的关注
@@ -243,7 +243,7 @@ void TcpConnection::handleClose()
     channel_->disableAll();
 
     TcpConnectionPtr connPtr(shared_from_this());
-    connectionCallback_(connPtr); // 执行连接关闭的回调
+    connectionCallback_(connPtr); // 执行连接关闭的回调 connectionCallback_可以根据connPtr->connected()判断当前连接的state，从而执行对应的操作
     closeCallback_(connPtr);      // 执行关闭连接的回调 执行的是TcpServer::removeConnection回调方法   // must be the last line
 }
 

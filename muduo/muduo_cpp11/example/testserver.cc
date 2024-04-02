@@ -1,14 +1,14 @@
 #include <string>
 
-#include <mymuduo/TcpServer.h>
-#include <mymuduo/Logger.h>
+#include <TcpServer.h>
+#include <Logger.h>
 
 class EchoServer
 {
 public:
     EchoServer(EventLoop *loop, const InetAddress &addr, const std::string &name)
         : server_(loop, addr, name)
-        , loop_(lop)
+        , loop_(loop)
     {
         // 注册回调函数
         server_.setConnectionCallback(

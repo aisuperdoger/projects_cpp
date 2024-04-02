@@ -27,12 +27,12 @@ EPollPoller::~EPollPoller()
 }
 
 // 监控事件的发生，并将发生事件的channel（fd），放入activeChannels中
-Timestamp EPollPoller::poll(int timeoutMs, ChannelList *activeChannels)
+Timestamp EPollPoller::poll(int timeoutMs, ChannelList *activeChannels) // 设置timeoutMs的目的是什么
 {
     // 由于频繁调用poll 实际上应该用LOG_DEBUG输出日志更为合理 当遇到并发场景 关闭DEBUG日志提升效率
     LOG_INFO("func=%s => fd total count:%lu\n", __FUNCTION__, channels_.size());
 
-    int numEvents = ::epoll_wait(epollfd_, &*events_.begin(), static_cast<int>(events_.size()), timeoutMs);
+    int numEvents = ::epoll_wait(epollfd_, &*events_.begin(), static_cast<int>(events_.size()), timeoutMs); // events_.begin()是迭代器，*events_.begin()是实例，&*events_.begin()是实例的地址
     int saveErrno = errno;
     Timestamp now(Timestamp::now());
 
@@ -51,7 +51,7 @@ Timestamp EPollPoller::poll(int timeoutMs, ChannelList *activeChannels)
     }
     else
     {
-        if (saveErrno != EINTR)
+        if (saveErrno != EINTR) // 应该代表时钟中断
         {
             errno = saveErrno;
             LOG_ERROR("EPollPoller::poll() error!");
@@ -84,7 +84,7 @@ void EPollPoller::updateChannel(Channel *channel)
         int fd = channel->fd();
         if (channel->isNoneEvent())
         {
-            update(EPOLL_CTL_DEL, channel);
+            update(EPOLL_CTL_DEL, channel); // 没有事件就将对应fd从
             channel->set_index(kDeleted);
         }
         else
@@ -115,7 +115,9 @@ void EPollPoller::fillActiveChannels(int numEvents, ChannelList *activeChannels)
 {
     for (int i = 0; i < numEvents; ++i)
     {
-        Channel *channel = static_cast<Channel *>(events_[i].data.ptr); // 拿到当前事件中的data.ptr，并将其转换为Channel*。注意：这里的channel还是指向data.ptr所指向的内容，而不是一个独立的新的指针
+        // update()中将fd放到epoll树上时，就将fd对应的channel放在ptr的位置，所这里就是转换回去。  
+        // 拿到当前事件中的data.ptr，并将其转换为Channel*。注意：这里的channel还是指向data.ptr所指向的内容，而不是一个独立的新的指针
+        Channel *channel = static_cast<Channel *>(events_[i].data.ptr); 
         channel->set_revents(events_[i].events);  // 这里相等于将data.ptr指针转换为channel，并使用channel格式对data.ptr指向空间进行填充。
         activeChannels->push_back(channel); // EventLoop就拿到了它的Poller给它返回的所有发生事件的channel列表了
     }
